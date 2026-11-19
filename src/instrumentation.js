@@ -1,13 +1,14 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    // In Vercel Serverless, skip heavy background syncing and buffer hooks
-    // to keep cold start fast and prevent Fluid Active CPU waste.
+    // In Vercel Serverless, silence stdout logs to eliminate I/O overhead & save Fluid Active CPU
     if (process.env.VERCEL) {
+      const noop = () => {};
+      console.log = noop;
+      console.info = noop;
+      console.debug = noop;
+      console.warn = noop;
       return;
     }
-
-    const { initConsoleLogCapture } = await import("@/lib/consoleLogBuffer");
-    initConsoleLogCapture();
 
     // Server-only: lets capabilities.js read the synced catalog without pulling
     // node:fs into the dashboard's browser bundle.

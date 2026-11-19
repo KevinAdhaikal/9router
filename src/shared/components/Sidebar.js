@@ -30,7 +30,6 @@ const navItems = [
 ];
 
 const debugItems = [
-  { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
   { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
 
@@ -56,17 +55,6 @@ export default function Sidebar({ onClose }) {
     useSettingsStore.getState().fetchSettings().then((data) => {
       if (data?.enableTranslator) setEnableTranslator(true);
     });
-  }, []);
-
-  // Lazy check for new npm version in background after initial render
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fetch("/api/version")
-        .then(res => res.json())
-        .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
-        .catch(() => {});
-    }, 2500);
-    return () => clearTimeout(timer);
   }, []);
 
   const isActive = (href) => {

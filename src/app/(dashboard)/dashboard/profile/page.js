@@ -1626,15 +1626,6 @@ export default function ProfilePage() {
           <Button
             variant="outline"
             fullWidth
-            icon="power_settings_new"
-            onClick={() => setShutdownOpen(true)}
-            className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
-          >
-            Shutdown
-          </Button>
-          <Button
-            variant="outline"
-            fullWidth
             icon="logout"
             onClick={handleLogout}
           >
@@ -1656,17 +1647,6 @@ export default function ProfilePage() {
           setLangOpen(false);
           setLocale(next);
         }}
-      />
-      <ConfirmModal
-        isOpen={shutdownOpen}
-        onClose={() => setShutdownOpen(false)}
-        onConfirm={handleShutdown}
-        title="Close Proxy"
-        message="Are you sure you want to close the proxy server?"
-        confirmText="Close"
-        cancelText="Cancel"
-        variant="danger"
-        loading={isShuttingDown}
       />
 
       <Modal

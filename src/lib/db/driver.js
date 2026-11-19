@@ -6,6 +6,7 @@ const state = global._dbAdapter;
 
 export function getDatabaseUrl() {
   return (
+    process.env.SIN1_DATABASE_URL ||
     process.env.DATABASE_URL ||
     process.env.POSTGRES_URL ||
     process.env.NEON_DATABASE_URL ||
