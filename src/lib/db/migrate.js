@@ -69,6 +69,17 @@ export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
   _migratedAdapters.add(adapter);
 
+  // Fast-path: Check schema version first with 1 single query.
+  // If the schema is already synchronized, avoid executing 50+ DDL / ALTER queries on every cold start!
+  try {
+    const currentVersion = await getMeta(adapter, "schemaVersion", null);
+    if (currentVersion === String(SCHEMA_VERSION)) {
+      return;
+    }
+  } catch {
+    // _meta table might not exist yet on fresh install, proceed to bootstrap below
+  }
+
   // 1. Bootstrap _meta table first
   await adapter.exec(buildCreateTableSql("_meta", TABLES._meta));
 

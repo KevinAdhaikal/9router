@@ -169,6 +169,34 @@ const LIVE_MODEL_RESOLVERS = {
   },
 };
 
+const _liveCatalogCache = new Map();
+const LIVE_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+const LIVE_RESOLVER_TIMEOUT_MS = 2500; // 2.5s cap per live resolver
+
+async function resolveLiveWithTimeout(providerId, conn, resolver) {
+  const cacheKey = `${providerId}|${conn?.id || "default"}`;
+  const now = Date.now();
+  const cached = _liveCatalogCache.get(cacheKey);
+  if (cached && now < cached.expiresAt) {
+    return cached.data;
+  }
+
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Timeout")), LIVE_RESOLVER_TIMEOUT_MS);
+  });
+
+  try {
+    const data = await Promise.race([resolver(conn), timeoutPromise]);
+    if (data?.models?.length) {
+      _liveCatalogCache.set(cacheKey, { data, expiresAt: now + LIVE_CATALOG_CACHE_TTL_MS });
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
   return data?.data || data?.models || data?.results || [];
@@ -496,7 +524,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
       if (liveResolver && !hasExplicitEnabledModels) {
         try {
-          const live = await liveResolver(conn);
+          const live = await resolveLiveWithTimeout(providerId, conn, liveResolver);
           if (live?.models?.length) {
             rawModelIds = live.models.map((m) => m.id);
             liveModelKindById = new Map(

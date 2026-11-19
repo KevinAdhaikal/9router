@@ -38,20 +38,35 @@ async function upsert(db, n) {
   );
 }
 
+let _nodesCache = null;
+let _nodesCacheExpiresAt = 0;
+const NODES_CACHE_TTL_MS = 60_000; // 60s
+
+export function invalidateNodesCache() {
+  _nodesCache = null;
+  _nodesCacheExpiresAt = 0;
+}
+
 export async function getProviderNodes(filter = {}) {
-  const db = await getAdapter();
-  const where = [];
-  const params = [];
-  if (filter.type) { where.push("type = ?"); params.push(filter.type); }
-  const sql = `SELECT * FROM providerNodes${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
-  const rows = await db.all(sql, params);
-  return rows.map(rowToNode);
+  const now = Date.now();
+  let list = _nodesCache;
+  if (!list || now >= _nodesCacheExpiresAt) {
+    const db = await getAdapter();
+    const rows = await db.all(`SELECT * FROM providerNodes`);
+    list = rows.map(rowToNode);
+    _nodesCache = list;
+    _nodesCacheExpiresAt = now + NODES_CACHE_TTL_MS;
+  }
+  return list.filter((n) => {
+    if (filter.type && n.type !== filter.type) return false;
+    return true;
+  });
 }
 
 export async function getProviderNodeById(id) {
-  const db = await getAdapter();
-  const row = await db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]);
-  return rowToNode(row);
+  if (!id) return null;
+  const nodes = await getProviderNodes();
+  return nodes.find((n) => n.id === id) || null;
 }
 
 export async function createProviderNode(data) {
@@ -68,6 +83,7 @@ export async function createProviderNode(data) {
     updatedAt: now,
   };
   await upsert(db, node);
+  invalidateNodesCache();
   return node;
 }
 
@@ -81,6 +97,7 @@ export async function updateProviderNode(id, data) {
     await upsert(db, merged);
     result = merged;
   });
+  invalidateNodesCache();
   return result;
 }
 
@@ -94,5 +111,6 @@ export async function deleteProviderNode(id) {
     await db.run(`DELETE FROM providerNodes WHERE id = ?`, [id]);
     await db.run(`DELETE FROM kv WHERE scope = 'customModels' AND key LIKE ?`, [`${id}|%`]);
   });
+  invalidateNodesCache();
   return removed;
 }

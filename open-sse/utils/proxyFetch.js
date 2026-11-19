@@ -35,11 +35,14 @@ export function isStaleSocketError(error) {
   return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
 }
 
-// Always fetch through the package's own undici instance so fetch and the
-// Agents below come from the same copy — dispatcher options are only guaranteed
-// to match within one undici version.
+// Keep reference to the runtime's native fetch
+const _nativeFetch = globalThis.fetch;
+
 let undiciFetch = null;
 async function rawFetch(url, options) {
+  if (!options?.dispatcher && _nativeFetch) {
+    return _nativeFetch(url, options);
+  }
   undiciFetch ??= (await import("undici")).fetch;
   return undiciFetch(url, options);
 }
@@ -215,6 +218,8 @@ async function resolveRealIP(hostname) {
  * Check if request should bypass MITM DNS redirect
  */
 function shouldBypassMitmDns(url) {
+  // On Vercel, MITM is never running and /etc/hosts is never spoofed
+  if (process.env.VERCEL) return false;
   try {
     const hostname = new URL(url).hostname;
     return MITM_BYPASS_HOSTS.some(host => hostname.includes(host));
@@ -503,6 +508,13 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const proxyUrl = connectionProxyUrl || envProxyUrl;
   const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options?.forceFreshSocket === true;
 
+  // FAST PATH: When no proxy is configured, use runtime's native fetch directly.
+  // This bypasses undici dynamic imports, custom Agent allocations, and unpooled raw sockets.
+  if (!proxyUrl && (process.env.VERCEL || !shouldBypassMitmDns(targetUrl))) {
+    if (options?.directFetch) return await options.directFetch(url, options);
+    return await _nativeFetch(url, options);
+  }
+
   // Protocol adapters that own their transport (wreq-js TLS impersonation)
   // cannot use an undici dispatcher: they must drive the proxy themselves.
   // Only adapters that declare `proxyCapable` opt in — any other adapter
@@ -586,12 +598,16 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
  * Patched global fetch with env-proxy support and MITM DNS bypass
  */
 async function patchedFetch(url, options = {}) {
+  const hasProxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || process.env.ALL_PROXY || process.env.all_proxy;
+  if (!hasProxy && (process.env.VERCEL || !shouldBypassMitmDns(typeof url === "string" ? url : url.toString()))) {
+    return _nativeFetch(url, options);
+  }
   return proxyAwareFetch(url, options, null);
 }
 
-// Idempotency guard — only patch once to avoid wrapping multiple times
-if (globalThis.fetch !== patchedFetch) {
+// On Vercel, keep native runtime fetch clean without monkey-patching globalThis.fetch
+if (!process.env.VERCEL && globalThis.fetch !== patchedFetch) {
   globalThis.fetch = patchedFetch;
 }
 
-export default patchedFetch;
+export default (process.env.VERCEL ? _nativeFetch : patchedFetch);

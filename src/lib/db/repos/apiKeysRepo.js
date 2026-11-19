@@ -28,12 +28,26 @@ export async function getApiKeyById(id) {
   return rowToKey(row);
 }
 
+const _keyCache = new Map(); // key -> { record, expiresAt }
+const KEY_CACHE_TTL_MS = 60_000; // 60s
+
+export function invalidateApiKeyCache() {
+  _keyCache.clear();
+}
+
 // Used by the /v1 handlers to read the presented key's access settings.
 export async function getApiKeyByKey(key) {
   if (!key) return null;
+  const now = Date.now();
+  const cached = _keyCache.get(key);
+  if (cached && now < cached.expiresAt) {
+    return cached.record;
+  }
   const db = await getAdapter();
   const row = await db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]);
-  return rowToKey(row);
+  const record = rowToKey(row);
+  _keyCache.set(key, { record, expiresAt: now + KEY_CACHE_TTL_MS });
+  return record;
 }
 
 export async function createApiKey(name, machineId) {
@@ -55,6 +69,7 @@ export async function createApiKey(name, machineId) {
     `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
     [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt, cols.accessRestricted, cols.accessAllow]
   );
+  invalidateApiKeyCache();
   return apiKey;
 }
 
@@ -73,18 +88,20 @@ export async function updateApiKey(id, data) {
     const updatedRow = await db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     result = rowToKey(updatedRow);
   });
+  invalidateApiKeyCache();
   return result;
 }
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
   const res = await db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+  invalidateApiKeyCache();
   return (res?.changes ?? 0) > 0;
 }
 
 export async function validateApiKey(key) {
-  const db = await getAdapter();
-  const row = await db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
-  if (!row) return false;
-  return row.isActive === 1 || row.isActive === true;
+  if (!key) return false;
+  const record = await getApiKeyByKey(key);
+  if (!record) return false;
+  return record.isActive === true;
 }

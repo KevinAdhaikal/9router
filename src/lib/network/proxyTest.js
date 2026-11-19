@@ -1,4 +1,4 @@
-import { ProxyAgent, fetch as undiciFetch } from "undici";
+import { ProxyAgent } from "undici";
 
 const DEFAULT_TEST_URL = "https://google.com/";
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -56,7 +56,7 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
     const timer = setTimeout(() => controller.abort(), normalizedTimeoutMs);
 
     try {
-      const res = await undiciFetch(normalizedTestUrl, {
+      const res = await fetch(normalizedTestUrl, {
         method: "HEAD",
         dispatcher,
         signal: controller.signal,

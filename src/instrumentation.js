@@ -1,5 +1,11 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // In Vercel Serverless, skip heavy background syncing and buffer hooks
+    // to keep cold start fast and prevent Fluid Active CPU waste.
+    if (process.env.VERCEL) {
+      return;
+    }
+
     const { initConsoleLogCapture } = await import("@/lib/consoleLogBuffer");
     initConsoleLogCapture();
 

@@ -28,16 +28,12 @@ const nextConfig = {
   // undici must stay external too: webpack's vendored copy drops the per-request
   // `dispatcher` connect options (ecdhCurve) — the built server then RSTs on
   // DPI-shaped networks while the dev server (real undici) passes.
-  serverExternalPackages: ["open", "@aws-sdk/credential-providers", "wreq-js", "undici"],
+  serverExternalPackages: ["open", "@aws-sdk/credential-providers", "wreq-js"],
   turbopack: {
     root: tracingRoot
   },
   outputFileTracingRoot: tracingRoot,
-  outputFileTracingIncludes: {
-    // serverExternalPackages keeps undici external; dynamic import("undici")
-    // alone doesn't pull it into the trace, so force-ship the real package.
-    "*": ["./node_modules/undici/**/*"]
-  },
+  outputFileTracingIncludes: {},
   outputFileTracingExcludes: {
     "*": ["./gitbook/**/*"]
   },
