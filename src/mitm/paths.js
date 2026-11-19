@@ -1,0 +1,37 @@
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+
+const APP_NAME = "9router";
+
+function defaultDir() {
+  try {
+    if (process.platform === "win32") {
+      return path.join(process.env.APPDATA || path.join(os.homedir?.() || "/tmp", "AppData", "Roaming"), APP_NAME);
+    }
+    return path.join(os.homedir?.() || "/tmp", `.${APP_NAME}`);
+  } catch {
+    return `/tmp/.${APP_NAME}`;
+  }
+}
+
+function getDataDir() {
+  const configured = process.env.DATA_DIR;
+  if (!configured) return defaultDir();
+  try {
+    fs.mkdirSync(configured, { recursive: true });
+    return configured;
+  } catch (e) {
+    if (e?.code === "EACCES" || e?.code === "EPERM") {
+      console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);
+      return defaultDir();
+    }
+    return defaultDir();
+  }
+}
+
+const DATA_DIR = getDataDir();
+const MITM_DIR = path.join(DATA_DIR, "mitm");
+try { fs.mkdirSync(MITM_DIR, { recursive: true }); } catch {}
+
+module.exports = { DATA_DIR, MITM_DIR };
