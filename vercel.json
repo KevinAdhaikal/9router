@@ -1,0 +1,9 @@
+{
+  "buildCommand": "next build --webpack",
+  "framework": "nextjs",
+  "functions": {
+    "src/app/api/**/*": {
+      "maxDuration": 60
+    }
+  }
+}
