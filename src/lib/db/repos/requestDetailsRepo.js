@@ -28,7 +28,7 @@ async function getObservabilityConfig() {
       cachedConfigTs = Date.now();
       return cachedConfig;
     }
-    const envFallback = process.env.OBSERVABILITY_ENABLED !== "false";
+    const envFallback = process.env.VERCEL ? (process.env.OBSERVABILITY_ENABLED === "true") : (process.env.OBSERVABILITY_ENABLED !== "false");
     const uiFlag = typeof settings.enableObservability === "boolean";
     const enabled = uiFlag
       ? settings.enableObservability

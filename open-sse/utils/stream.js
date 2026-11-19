@@ -180,11 +180,34 @@ export function createSSEStream(options = {}) {
           let responsesTerminal = false;
 
           // Upstream already sent the sentinel; flush() must not append a second one.
-          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") streamDoneSent = true;
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            streamDoneSent = true;
+            const doneOutput = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(doneOutput);
+            controller.enqueue(sharedEncoder.encode(doneOutput));
+            finalizeStream();
+            continue;
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
+            const dataStr = trimmed.slice(5).trim();
+            const needsParse = dataStr.includes('"finish_reason"') ||
+              dataStr.includes('"usage"') ||
+              dataStr.includes('"tool_calls"') ||
+              (toolNameMap?.size && dataStr.includes('"function"')) ||
+              (liftAliases && (dataStr.includes('"reasoning') || dataStr.includes('"thought')));
+
+            if (!needsParse) {
+              const fastOutput = (line.startsWith("data:") && !line.startsWith("data: "))
+                ? "data: " + line.slice(5) + "\n"
+                : line + "\n";
+              reqLogger?.appendConvertedChunk?.(fastOutput);
+              controller.enqueue(sharedEncoder.encode(fastOutput));
+              continue;
+            }
+
             try {
-              let parsed = JSON.parse(trimmed.slice(5).trim());
+              let parsed = JSON.parse(dataStr);
 
               const idFixed = fixInvalidId(parsed);
 
