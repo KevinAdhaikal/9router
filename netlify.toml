@@ -1,0 +1,44 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  NETLIFY = "true"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Prevent CDN caching and buffering for SSE streaming and API responses
+[[headers]]
+  for = "/v1/*"
+  [headers.values]
+    Cache-Control = "no-cache, no-transform"
+    X-Accel-Buffering = "no"
+
+[[headers]]
+  for = "/v1beta/*"
+  [headers.values]
+    Cache-Control = "no-cache, no-transform"
+    X-Accel-Buffering = "no"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-cache, no-transform"
+    X-Accel-Buffering = "no"
+
+[[headers]]
+  for = "/responses"
+  [headers.values]
+    Cache-Control = "no-cache, no-transform"
+    X-Accel-Buffering = "no"
+
+[[headers]]
+  for = "/codex/*"
+  [headers.values]
+    Cache-Control = "no-cache, no-transform"
+    X-Accel-Buffering = "no"

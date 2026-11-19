@@ -1322,6 +1322,24 @@ docker pull decolua/9router:latest   # update to latest
 
 **Data persistence:** `$HOME/.9router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
 
+### Netlify Deployment
+
+9router supports 100% serverless deployment to **Netlify** using `@netlify/plugin-nextjs` and `netlify.toml`:
+
+1. **Deploy with Git / Netlify CLI:**
+   - Link your GitHub repository in the Netlify dashboard, or deploy from terminal:
+     ```bash
+     npx netlify deploy --build --prod
+     ```
+2. **Environment Variables on Netlify (Site Settings → Environment variables):**
+   - `JWT_SECRET`: Random 32+ character string for secure session token signing.
+   - `INITIAL_PASSWORD`: Password for admin dashboard access.
+   - `REQUIRE_API_KEY`: Set to `true` to require an API key on `/v1/*` endpoints.
+   - `NODE_ENV`: `production`
+
+> [!NOTE]
+> Netlify automatically runs the build via `netlify.toml` with `@netlify/plugin-nextjs` and Node 22 (`node:sqlite`). Writable storage (`/tmp/9router`) and non-buffering SSE streaming headers (`no-transform`, `X-Accel-Buffering: no`) are preconfigured out of the box.
+
 ### Environment Variables
 
 | Variable                                             | Default                                  | Description                                                                         |

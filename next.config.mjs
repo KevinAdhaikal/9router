@@ -8,11 +8,12 @@ const tracingRoot = process.env.NEXT_TRACING_ROOT_MODE === "workspace"
   ? join(projectRoot, "..")
   : projectRoot;
 const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE || "128mb";
+const isNetlify = !!(process.env.NETLIFY || process.env.NETLIFY_LOCAL);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
-  output: "standalone",
+  output: isNetlify ? undefined : (process.env.NEXT_OUTPUT_STANDALONE === "false" ? undefined : "standalone"),
   // `open` must stay external. It derives its own directory from `import.meta.url`, and
   // webpack replaces that with the absolute path of the BUILD machine as a string literal.
   // A release built on macOS therefore ships `file:///Users/.../open/index.js`, which

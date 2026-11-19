@@ -10,6 +10,7 @@
     "dev": "next dev --port 20127",
     "dev:webpack": "next dev --webpack --port 20127",
     "build": "next build --webpack",
+    "build:netlify": "NETLIFY=true next build --webpack",
     "postbuild": "node scripts/copy-standalone-assets.mjs",
     "postbuild:bun": "node scripts/copy-standalone-assets.mjs",
     "start": "node custom-server.js --port 20127",
@@ -61,6 +62,7 @@
   "comment_aws_sdk_credential_providers": "kept in optionalDependencies (npm still installs these by default) and imported lazily in shared/awsCredentials.js — only AWS Bedrock connections using profile/SSO mode need it; static accessKeyId/secretAccessKey connections never load it",
   "comment_playwright_core": "devDependency only (keeps end-user installs small); open-sse/services/lazyRuntime.js downloads it + wreq-js on first use into <DATA_DIR>/runtime. playwright-core ships no browser binaries (run `npx playwright-core install chromium` or point OBSCURA_CDP_ENDPOINT/cloakbrowser at a stealth engine)",
   "devDependencies": {
+    "@netlify/plugin-nextjs": "^5.16.8",
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",

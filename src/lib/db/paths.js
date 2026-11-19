@@ -13,6 +13,10 @@ export const LEGACY_FILES = {
 };
 export function ensureDirs() {
   for (const dir of [DATA_DIR, DB_DIR, BACKUPS_DIR]) {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    } catch (e) {
+      console.warn(`[DB] Failed to ensure dir ${dir}:`, e?.message || e);
+    }
   }
 }

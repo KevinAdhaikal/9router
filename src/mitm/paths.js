@@ -11,19 +11,50 @@ function defaultDir() {
   return path.join(os.homedir(), `.${APP_NAME}`);
 }
 
+function isWritableDir(dir) {
+  if (!dir) return false;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const testFile = path.join(dir, `.writable-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    fs.writeFileSync(testFile, "");
+    fs.unlinkSync(testFile);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getDataDir() {
   const configured = process.env.DATA_DIR;
-  if (!configured) return defaultDir();
-  try {
-    fs.mkdirSync(configured, { recursive: true });
-    return configured;
-  } catch (e) {
-    if (e?.code === "EACCES" || e?.code === "EPERM") {
-      console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);
-      return defaultDir();
+  if (configured) {
+    if (process.platform === "win32" && /^\//.test(configured)) {
+      console.warn(`[DATA_DIR] '${configured}' is a Unix path on Windows → fallback`);
+    } else if (isWritableDir(configured)) {
+      return configured;
+    } else {
+      console.warn(`[DATA_DIR] '${configured}' not writable → searching fallback`);
     }
-    throw e;
   }
+
+  const isServerless = !!(
+    process.env.NETLIFY ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.VERCEL ||
+    process.env.DENO_DEPLOYMENT_ID
+  );
+
+  const tmpDir = path.join(os.tmpdir(), APP_NAME);
+  const candidates = isServerless
+    ? [tmpDir, defaultDir(), path.join("/tmp", APP_NAME)]
+    : [defaultDir(), tmpDir, path.join("/tmp", APP_NAME)];
+
+  for (const candidate of candidates) {
+    if (isWritableDir(candidate)) {
+      return candidate;
+    }
+  }
+
+  return tmpDir;
 }
 
 const DATA_DIR = getDataDir();
