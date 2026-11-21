@@ -8,7 +8,7 @@ export { VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES };
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
 // opts.preserveCacheControl: keep cache_control on content blocks (e.g. for DashScope/alicode)
 export function filterToOpenAIFormat(body, opts = {}) {
-  if (!body.messages || !Array.isArray(body.messages)) return body;
+  if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) return body;
   const keepCache = !!opts.preserveCacheControl;
 
   function stripBlock(block) {
@@ -16,66 +16,106 @@ export function filterToOpenAIFormat(body, opts = {}) {
     return keepCache && cache_control ? { ...rest, cache_control } : rest;
   }
 
-  body.messages = body.messages.map(msg => {
-    // Normalize developer role to system (many providers don't support developer)
-    if (msg.role === ROLE.DEVELOPER) msg = { ...msg, role: ROLE.SYSTEM };
+  // Fast check: verify if any message or tool actually requires transformation.
+  // In standard OpenAI -> OpenAI conversations, messages are already strings and tools are functions.
+  // This early-exit bypasses thousands of allocations on multi-turn conversations.
+  let needsMessageClean = false;
+  for (let i = 0; i < body.messages.length; i++) {
+    const msg = body.messages[i];
+    if (!msg || msg.role === ROLE.DEVELOPER || Array.isArray(msg.content)) {
+      needsMessageClean = true;
+      break;
+    }
+    if (typeof msg.content === "string") {
+      if (!/\S/.test(msg.content) && msg.role !== ROLE.TOOL && !(msg.role === ROLE.ASSISTANT && msg.tool_calls)) {
+        needsMessageClean = true;
+        break;
+      }
+    } else if (msg.role !== ROLE.TOOL && !(msg.role === ROLE.ASSISTANT && msg.tool_calls)) {
+      needsMessageClean = true;
+      break;
+    }
+  }
 
-    // Keep tool messages as-is (OpenAI format)
-    if (msg.role === ROLE.TOOL) return msg;
+  const hasEmptyTools = body.tools && Array.isArray(body.tools) && body.tools.length === 0;
+  const toolsNeedClean = body.tools && Array.isArray(body.tools) && body.tools.length > 0 &&
+    body.tools.some(tool => !(tool.type === OPENAI_BLOCK.FUNCTION && tool.function));
+  const toolChoiceNeedsClean = body.tool_choice && typeof body.tool_choice === "object";
 
-    // Keep assistant messages with tool_calls as-is
-    if (msg.role === ROLE.ASSISTANT && msg.tool_calls) return msg;
+  if (!needsMessageClean && !hasEmptyTools && !toolsNeedClean && !toolChoiceNeedsClean) {
+    return body;
+  }
 
-    // Handle string content
-    if (typeof msg.content === "string") return msg;
+  // Single-pass message cleaning and filtering
+  if (needsMessageClean) {
+    const cleanedMessages = [];
+    for (let i = 0; i < body.messages.length; i++) {
+      let msg = body.messages[i];
+      if (!msg) continue;
 
-    // Handle array content
-    if (Array.isArray(msg.content)) {
-      const filteredContent = [];
+      // Normalize developer role to system (many providers don't support developer)
+      if (msg.role === ROLE.DEVELOPER) msg = { ...msg, role: ROLE.SYSTEM };
 
-      for (const block of msg.content) {
-        // Skip thinking blocks
-        if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) continue;
+      // Keep tool messages as-is (OpenAI format)
+      if (msg.role === ROLE.TOOL) {
+        cleanedMessages.push(msg);
+        continue;
+      }
 
-        // Only keep valid OpenAI content types
-        if (VALID_OPENAI_CONTENT_TYPES.includes(block.type)) {
-          filteredContent.push(stripBlock(block));
-        } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
-          // Convert tool_use to tool_calls format (handled separately)
-          continue;
-        } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
-          // Keep tool_result but clean it
-          filteredContent.push(stripBlock(block));
+      // Keep assistant messages with tool_calls as-is
+      if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
+        cleanedMessages.push(msg);
+        continue;
+      }
+
+      // Handle string content: only keep if non-empty
+      if (typeof msg.content === "string") {
+        if (/\S/.test(msg.content)) {
+          cleanedMessages.push(msg);
         }
+        continue;
       }
-      
-      // If all content was filtered, add empty text
-      if (filteredContent.length === 0) {
-        filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
+
+      // Handle array content
+      if (Array.isArray(msg.content)) {
+        const filteredContent = [];
+
+        for (const block of msg.content) {
+          // Skip thinking blocks
+          if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) continue;
+
+          // Only keep valid OpenAI content types
+          if (VALID_OPENAI_CONTENT_TYPES.includes(block.type)) {
+            filteredContent.push(stripBlock(block));
+          } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
+            // Convert tool_use to tool_calls format (handled separately)
+            continue;
+          } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
+            // Keep tool_result but clean it
+            filteredContent.push(stripBlock(block));
+          }
+        }
+
+        // If all content was filtered, add empty text
+        if (filteredContent.length === 0) {
+          filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
+        }
+
+        const hasNonEmpty = filteredContent.some(b =>
+          (b.type === OPENAI_BLOCK.TEXT && /\S/.test(b.text || "")) ||
+          b.type !== OPENAI_BLOCK.TEXT
+        );
+
+        if (hasNonEmpty) {
+          cleanedMessages.push({ ...msg, content: filteredContent });
+        }
+        continue;
       }
-      
-      return { ...msg, content: filteredContent };
+
+      cleanedMessages.push(msg);
     }
-    
-    return msg;
-  });
-  
-  // Filter out messages with only empty text (but NEVER filter tool messages)
-  body.messages = body.messages.filter(msg => {
-    // Always keep tool messages
-    if (msg.role === ROLE.TOOL) return true;
-    // Always keep assistant messages with tool_calls
-    if (msg.role === ROLE.ASSISTANT && msg.tool_calls) return true;
-    
-    if (typeof msg.content === "string") return msg.content.trim() !== "";
-    if (Array.isArray(msg.content)) {
-      return msg.content.some(b => 
-        (b.type === OPENAI_BLOCK.TEXT && b.text?.trim()) ||
-        b.type !== OPENAI_BLOCK.TEXT
-      );
-    }
-    return true;
-  });
+    body.messages = cleanedMessages;
+  }
 
   // Remove empty tools array (some providers like QWEN reject it)
   if (body.tools && Array.isArray(body.tools) && body.tools.length === 0) {
@@ -83,11 +123,11 @@ export function filterToOpenAIFormat(body, opts = {}) {
   }
 
   // Normalize tools to OpenAI format (from Claude, Gemini, etc.)
-  if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
+  if (toolsNeedClean && body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     body.tools = body.tools.map(tool => {
       // Already OpenAI format
       if (tool.type === OPENAI_BLOCK.FUNCTION && tool.function) return tool;
-      
+
       // Claude format: {name, description, input_schema}
       if (tool.name && (tool.input_schema || tool.description)) {
         return {
@@ -99,7 +139,7 @@ export function filterToOpenAIFormat(body, opts = {}) {
           }
         };
       }
-      
+
       // Gemini format: {functionDeclarations: [{name, description, parameters}]}
       if (tool.functionDeclarations && Array.isArray(tool.functionDeclarations)) {
         return tool.functionDeclarations.map(fn => ({
@@ -111,7 +151,7 @@ export function filterToOpenAIFormat(body, opts = {}) {
           }
         }));
       }
-      
+
       return tool;
     }).flat();
   }

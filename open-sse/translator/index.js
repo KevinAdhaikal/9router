@@ -73,10 +73,14 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   const clientLastRole = detectClientLastRole(body);
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
-  stripContentTypes(result, stripList);
+  if (stripList && stripList.length > 0) {
+    stripContentTypes(result, stripList);
+  }
 
   // Normalize thinking config while preserving user and tool-result turns.
-  normalizeThinkingConfig(result);
+  if (result?.thinking) {
+    normalizeThinkingConfig(result);
+  }
 
   // Always ensure tool_calls have id (some providers require it)
   ensureToolCallIds(result);

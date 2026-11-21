@@ -121,7 +121,37 @@ export function hasToolResults(msg, toolCallIds) {
 
 // Fix missing tool responses - insert empty tool_result if assistant has tool_use but next message has no tool_result
 export function fixMissingToolResponses(body) {
-  if (!body.messages || !Array.isArray(body.messages)) return body;
+  if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) return body;
+
+  // Quick check: does any assistant message have tool_calls?
+  let hasAssistantToolCalls = false;
+  for (let i = 0; i < body.messages.length; i++) {
+    const msg = body.messages[i];
+    if (msg?.role === "assistant" && (msg.tool_calls?.length || Array.isArray(msg.content))) {
+      hasAssistantToolCalls = true;
+      break;
+    }
+  }
+  if (!hasAssistantToolCalls) return body;
+
+  // Check if any tool call is actually missing a response
+  let hasMissing = false;
+  for (let i = 0; i < body.messages.length; i++) {
+    const msg = body.messages[i];
+    if (msg.role === "assistant" && (msg.tool_calls?.length || Array.isArray(msg.content))) {
+      const toolCallIds = getToolCallIds(msg);
+      if (toolCallIds.length > 0) {
+        const nextMsg = body.messages[i + 1];
+        if (!nextMsg || !hasToolResults(nextMsg, toolCallIds)) {
+          hasMissing = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // If all tool calls already have responses, return body directly with zero allocations
+  if (!hasMissing) return body;
 
   const newMessages = [];
 
