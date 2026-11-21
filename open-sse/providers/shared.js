@@ -1,23 +1,25 @@
 import { setClaudeCliFallback } from "../utils/claudeCliVersion.js";
-import { platform, arch } from "os";
+import * as os from "os";
 
 // === OS/Arch helpers (Stainless fingerprint) ===
 export function mapStainlessOs() {
-  switch (platform()) {
+  const p = typeof os?.platform === "function" ? os.platform() : (typeof process !== "undefined" && process.platform ? process.platform : "linux");
+  switch (p) {
     case "darwin": return "MacOS";
     case "win32": return "Windows";
     case "linux": return "Linux";
     case "freebsd": return "FreeBSD";
-    default: return `Other::${platform()}`;
+    default: return `Other::${p}`;
   }
 }
 
 export function mapStainlessArch() {
-  switch (arch()) {
+  const a = typeof os?.arch === "function" ? os.arch() : (typeof process !== "undefined" && process.arch ? process.arch : "x64");
+  switch (a) {
     case "x64": return "x64";
     case "arm64": return "arm64";
     case "ia32": return "x86";
-    default: return `other::${arch()}`;
+    default: return `other::${a}`;
   }
 }
 

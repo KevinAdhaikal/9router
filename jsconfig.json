@@ -9,7 +9,9 @@
       "next/headers": ["./src/lib/shims/nextHeaders.js"],
       "next/link": ["./src/lib/shims/nextLink.jsx"],
       "next/navigation": ["./src/lib/shims/nextNavigation.js"],
-      "next/image": ["./src/lib/shims/nextImage.jsx"]
+      "next/image": ["./src/lib/shims/nextImage.jsx"],
+      "os": ["./src/lib/shims/os.js"],
+      "node:os": ["./src/lib/shims/os.js"]
     },
     "module": "ESNext",
     "moduleResolution": "bundler"

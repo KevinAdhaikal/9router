@@ -40,6 +40,8 @@ export default defineConfig({
       "next/link": path.resolve(__dirname, "./src/lib/shims/nextLink.jsx"),
       "next/navigation": path.resolve(__dirname, "./src/lib/shims/nextNavigation.js"),
       "next/image": path.resolve(__dirname, "./src/lib/shims/nextImage.jsx"),
+      "os": path.resolve(__dirname, "./src/lib/shims/os.js"),
+      "node:os": path.resolve(__dirname, "./src/lib/shims/os.js"),
     },
   },
   build: {
