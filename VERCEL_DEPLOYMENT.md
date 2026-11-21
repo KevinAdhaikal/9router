@@ -1,6 +1,6 @@
-# 🚀 Deploying 9Router to Vercel (with Neon Serverless PostgreSQL)
+# 🚀 Deploying 9Router to Vercel (with Upstash for Redis Singapore)
 
-Panduan lengkap untuk men-deploy **9Router** secara 100% serverless di **Vercel** menggunakan database **Neon Serverless PostgreSQL**.
+Panduan lengkap untuk men-deploy **9Router** secara 100% serverless di **Vercel** menggunakan database **Upstash for Redis (Region Singapore / `sin1`)**.
 
 ---
 
@@ -19,7 +19,7 @@ Panduan lengkap untuk men-deploy **9Router** secara 100% serverless di **Vercel*
 ## 🏛️ Arsitektur & Keunggulan
 
 Versi ini telah dioptimalkan khusus untuk lingkungan Vercel Serverless:
-- **Database**: Menggantikan SQLite lokal dengan **Neon Serverless PostgreSQL** menggunakan koneksi pooler (`@neondatabase/serverless`).
+- **Database**: Menggunakan **Upstash for Redis** berbasis REST HTTP (`@upstash/redis`) di region Singapore (`sin1`), hemat resource, sangat cepat (<10ms), tanpa overhead koneksi TCP pooler, dan tanpa cold start database.
 - **Filesystem**: File logs dan cache MITM dialihkan ke direktori writable sementara `/tmp/.9router` (`os.tmpdir()`), sehingga aman dari *read-only filesystem* error pada Vercel.
 - **Dynamic Origin Testing**: Pengetesan model (`/api/models/test`) mendeteksi domain Vercel secara dinamis tanpa mengandalkan port localhost lokal `127.0.0.1:20128`.
 - **Serverless Background Cron**: Endpoint `/api/cron/refresh-tokens` diamankan dengan `CRON_SECRET` untuk sinkronisasi token upstream secara otomatis.
@@ -30,7 +30,7 @@ Versi ini telah dioptimalkan khusus untuk lingkungan Vercel Serverless:
 
 Sebelum memulai, pastikan Anda telah menyiapkan:
 1. Akun [Vercel](https://vercel.com).
-2. Akun [Neon Database](https://neon.tech) (atau buat langsung dari Vercel Storage Marketplace).
+2. Database Upstash for Redis di Vercel Marketplace (Region Singapore `sin1`), misalnya `9router-upstash`.
 3. [Node.js](https://nodejs.org) versi 20 atau yang lebih baru di mesin lokal Anda.
 4. Akun [GitHub](https://github.com) jika memilih metode Git deployment.
 
@@ -42,7 +42,8 @@ Berikut adalah variabel lingkungan wajib yang perlu Anda konfigurasikan di Verce
 
 | Variabel | Wajib? | Contoh / Deskripsi |
 | :--- | :---: | :--- |
-| `DATABASE_URL` | **Ya** | Connection string Neon PostgreSQL (contoh: `postgresql://user:pass@ep-xyz-pooler.region.neon.tech/neondb?sslmode=require`) |
+| `KV_REST_API_URL` | **Ya** | URL REST API Upstash Redis (otomatis disuntikkan saat menghubungkan Upstash ke project Vercel) |
+| `KV_REST_API_TOKEN` | **Ya** | REST Token Upstash Redis (otomatis disuntikkan saat menghubungkan Upstash ke project Vercel) |
 | `JWT_SECRET` | **Ya** | String acak panjang 32+ karakter untuk enkripsi session dashboard. Generate dengan: `openssl rand -hex 32` |
 | `INITIAL_PASSWORD` | **Ya** | Password awal untuk login pertama kali ke Dashboard 9Router |
 | `CRON_SECRET` | **Ya** | Kunci rahasia untuk mengamankan endpoint cron refresh token `/api/cron/refresh-tokens` |
@@ -59,25 +60,19 @@ npm install -g vercel
 vercel login
 ```
 
-### Langkah 2: Hubungkan Project ke Vercel
+### Langkah 2: Hubungkan Project ke Vercel & Store Upstash
 Jalankan perintah berikut di folder repositori:
 ```bash
 vercel link
+vercel storage connect 9router-upstash --yes
 ```
-Ikuti petunjuk di terminal untuk membuat project baru atau menghubungkan ke project yang sudah ada.
-
-### Langkah 3: Setup Neon Database
-Anda bisa membuat database Neon langsung dari Vercel:
-1. Buka dashboard Vercel pada project Anda.
-2. Masuk ke tab **Storage** -> klik **Connect Store** -> pilih **Neon** (atau **Vercel Postgres**).
-3. Vercel akan otomatis menyuntikkan variabel `DATABASE_URL`, `POSTGRES_URL`, dll. ke project Anda.
 
 Tarik variabel lingkungan ke mesin lokal untuk verifikasi (file `.env.local` otomatis diabaikan oleh `.gitignore`):
 ```bash
 vercel env pull .env.local
 ```
 
-### Langkah 4: Tambahkan Environment Variables Tambahan
+### Langkah 3: Tambahkan Environment Variables Tambahan
 Tambahkan variabel rahasia ke environment Vercel Production:
 ```bash
 # Tambahkan JWT_SECRET
@@ -93,7 +88,7 @@ vercel env add CRON_SECRET production
 vercel env add MACHINE_ID production
 ```
 
-### Langkah 5: Deploy ke Production
+### Langkah 4: Deploy ke Production
 ```bash
 vercel --prod
 ```
@@ -106,10 +101,8 @@ Setelah proses selesai, Vercel akan menampilkan URL live production Anda (misal:
 ### Langkah 1: Push Repositori ke GitHub Anda
 ```bash
 git add .
-git commit -m "feat: vercel serverless support with neon postgresql"
-git remote set-url origin https://github.com/USERNAME/REPO_NAME.git
-git branch -M main
-git push -u origin main
+git commit -m "feat: upstash redis singapore database for vercel serverless"
+git push origin feat/vercel
 ```
 
 ### Langkah 2: Import ke Vercel Dashboard
@@ -122,9 +115,9 @@ git push -u origin main
 - **Root Directory**: `./` (biarkan default).
 - File [`vercel.json`](file:///home/kevinadhaikal/Documents/9router-vercel/vercel.json) sudah mengonfigurasi `next build --webpack` dan `maxDuration: 60` detik untuk Serverless Functions.
 
-### Langkah 4: Hubungkan Database Neon
-1. Di halaman konfigurasi atau tab **Storage**, tambahkan integrasi **Neon Postgres**.
-2. Pastikan variabel `DATABASE_URL` sudah terisi dengan connection string pooled Neon Anda.
+### Langkah 4: Hubungkan Database Upstash
+1. Di halaman konfigurasi atau tab **Storage**, hubungkan store **9router-upstash**.
+2. Pastikan variabel `KV_REST_API_URL` dan `KV_REST_API_TOKEN` sudah terpasang.
 
 ### Langkah 5: Masukkan Environment Variables
 Pada bagian **Environment Variables**, tambahkan:
@@ -196,9 +189,9 @@ Setelah deploy sukses:
 
 ## ❓ Troubleshooting & Solusi
 
-### 1. Error: `Missing DATABASE_URL or POSTGRES_URL environment variable`
-- **Penyebab**: Environment variable database belum terpasang di Vercel.
-- **Solusi**: Pastikan `DATABASE_URL` sudah ditambahkan pada menu **Settings** -> **Environment Variables** di Vercel dashboard, lalu lakukan *Redeploy*.
+### 1. Error: `Missing KV_REST_API_URL or KV_REST_API_TOKEN environment variable`
+- **Penyebab**: Environment variable Upstash belum terpasang di Vercel.
+- **Solusi**: Hubungkan store `9router-upstash` ke project Anda di tab **Storage** pada Vercel dashboard atau jalankan `vercel storage connect 9router-upstash --yes`.
 
 ### 2. Error: `EROFS: read-only file system`
 - **Penyebab**: Serverless container Vercel memiliki filesystem yang read-only kecuali direktori `/tmp`.
@@ -207,7 +200,3 @@ Setelah deploy sukses:
 ### 3. Error saat Test Model: `fetch failed`
 - **Penyebab**: Request diarahkan ke port lokal `http://127.0.0.1:20128`.
 - **Solusi**: Sudah diatasi secara otomatis dengan `resolveBaseUrl(request)`. Pastikan Anda mengakses dashboard melalui protokol HTTPS resmi Vercel Anda.
-
-### 4. Build Error: `Command "next build --webpack" exited with 135 (SIGBUS)`
-- **Penyebab**: Kehabisan memori atau disk lokal saat build.
-- **Solusi**: Pada Vercel Cloud, build runner memiliki kapasitas memori yang cukup. Jika terjadi di lokal, hapus `.next` dan `node_modules`, lalu install ulang dengan `npm install`.

@@ -69,6 +69,23 @@ export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
   _migratedAdapters.add(adapter);
 
+  // Fast-path for Upstash Redis (schemaless key-value database)
+  if (adapter.driver === "upstash-redis") {
+    try {
+      const currentVersion = await getMeta(adapter, "schemaVersion", null);
+      if (currentVersion === String(SCHEMA_VERSION)) {
+        return;
+      }
+    } catch {}
+
+    await setMeta(adapter, "schemaVersion", SCHEMA_VERSION);
+    const appVer = getAppVersion();
+    await setMeta(adapter, "appVersion", appVer);
+    await setMeta(adapter, "migratedAt", new Date().toISOString());
+    console.log(`[DB][migrate] Upstash Redis schema initialized (schema v${SCHEMA_VERSION}, app v${appVer})`);
+    return;
+  }
+
   // Fast-path: Check schema version first with 1 single query.
   // If the schema is already synchronized, avoid executing 50+ DDL / ALTER queries on every cold start!
   try {

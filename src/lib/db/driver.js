@@ -1,4 +1,4 @@
-import { createNeonAdapter } from "./adapters/neonAdapter.js";
+import { createUpstashRedisAdapter } from "./adapters/upstashRedisAdapter.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
 if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
@@ -6,28 +6,36 @@ const state = global._dbAdapter;
 
 export function getDatabaseUrl() {
   return (
-    process.env.SIN1_DATABASE_URL ||
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    process.env.NEON_DATABASE_URL ||
-    process.env.POSTGRES_PRISMA_URL ||
+    process.env.KV_REST_API_URL ||
+    process.env.UPSTASH_REDIS_REST_URL ||
+    process.env.REDIS_URL ||
+    process.env.KV_URL ||
+    ""
+  );
+}
+
+export function getDatabaseToken() {
+  return (
+    process.env.KV_REST_API_TOKEN ||
+    process.env.UPSTASH_REDIS_REST_TOKEN ||
     ""
   );
 }
 
 async function initAdapter() {
   const dbUrl = getDatabaseUrl();
-  if (!dbUrl) {
+  const dbToken = getDatabaseToken();
+
+  if (!dbUrl || !dbToken) {
     throw new Error(
-      "[DB] Missing DATABASE_URL or POSTGRES_URL environment variable. Please set DATABASE_URL to your Vercel Neon Database connection string."
+      "[DB] Missing KV_REST_API_URL or KV_REST_API_TOKEN environment variable. Please connect your Upstash for Redis store in Vercel."
     );
   }
 
-  const adapter = createNeonAdapter(dbUrl);
+  const adapter = createUpstashRedisAdapter({ url: dbUrl, token: dbToken });
 
   if (!state.logged) {
-    const masked = dbUrl.replace(/:\/\/[^:]+:[^@]+@/, "://***:***@");
-    console.log(`[DB] Driver: ${adapter.driver} (Neon Serverless PostgreSQL) | ${masked}`);
+    console.log(`[DB] Driver: ${adapter.driver} (Upstash for Redis Singapore) | ${dbUrl}`);
     state.logged = true;
   }
 
