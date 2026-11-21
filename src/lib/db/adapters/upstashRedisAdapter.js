@@ -174,8 +174,11 @@ function projectColumns(row, colStr) {
 
 function normalizeSql(sql) {
   if (!sql || typeof sql !== "string") return "";
-  // Translate PostgreSQL $1, $2 placeholders to ? if present
-  return sql.replace(/\$\d+/g, "?").trim();
+  // Translate PostgreSQL $1, $2 placeholders to ? if present, and collapse all whitespace/newlines
+  return sql
+    .replace(/\$\d+/g, "?")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function createUpstashRedisAdapter(redisClient) {
@@ -194,13 +197,13 @@ export function createUpstashRedisAdapter(redisClient) {
         });
 
   const SELECT_REGEX =
-    /^\s*SELECT\s+(.+?)\s+FROM\s+([a-zA-Z0-9_]+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+|\?))?(?:\s+OFFSET\s+(\d+|\?))?\s*$/i;
+    /^\s*SELECT\s+(.+?)\s+FROM\s+([a-zA-Z0-9_]+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+|\?))?(?:\s+OFFSET\s+(\d+|\?))?\s*$/is;
   const INSERT_REGEX =
-    /^\s*INSERT\s+INTO\s+([a-zA-Z0-9_]+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)(?:\s+ON\s+CONFLICT.*)?$/i;
+    /^\s*INSERT\s+INTO\s+([a-zA-Z0-9_]+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)(?:\s+ON\s+CONFLICT[\s\S]*)?$/is;
   const UPDATE_REGEX =
-    /^\s*UPDATE\s+([a-zA-Z0-9_]+)\s+SET\s+(.+?)\s+WHERE\s+(.+)$/i;
+    /^\s*UPDATE\s+([a-zA-Z0-9_]+)\s+SET\s+(.+?)\s+WHERE\s+(.+)$/is;
   const DELETE_REGEX =
-    /^\s*DELETE\s+FROM\s+([a-zA-Z0-9_]+)(?:\s+WHERE\s+(.+))?$/i;
+    /^\s*DELETE\s+FROM\s+([a-zA-Z0-9_]+)(?:\s+WHERE\s+(.+))?$/is;
 
   async function getAllTableRows(tableName) {
     const tbl = tableKey(tableName);
