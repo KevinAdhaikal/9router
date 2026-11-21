@@ -31,6 +31,56 @@ const STREAM_MODE = {
 const PENDING_COMPLETION_FLUSH_MS = 3000;
 
 /**
+ * Fast RFC 8259 string scanner to extract a JSON string property value with its quotes intact.
+ * Handles escaped quotes, backslashes, unicode, etc.
+ */
+function extractJsonString(line, key) {
+  const keyIdx = line.indexOf(key);
+  if (keyIdx === -1) return null;
+  const startQuote = line.indexOf('"', keyIdx + key.length);
+  if (startQuote === -1) return null;
+  let endQuote = -1;
+  for (let j = startQuote + 1; j < line.length; j++) {
+    if (line.charCodeAt(j) === 34) { // "\""
+      let backslashes = 0;
+      let k = j - 1;
+      while (k >= startQuote && line.charCodeAt(k) === 92) {
+        backslashes++;
+        k--;
+      }
+      if ((backslashes & 1) === 0) { // even number of backslashes means unescaped quote
+        endQuote = j;
+        break;
+      }
+    }
+  }
+  if (endQuote === -1) return null;
+  return line.slice(startQuote, endQuote + 1);
+}
+
+function tryFastClaudeToOpenAI(trimmed, state) {
+  if (!trimmed.includes('"content_block_delta"')) return null;
+
+  if (trimmed.includes('"text_delta"')) {
+    const rawText = extractJsonString(trimmed, '"text":');
+    if (!rawText || rawText === '""') return null;
+    const nowSec = state.created || Math.floor(Date.now() / 1000);
+    const sse = `data: {"id":"chatcmpl-${state.messageId}","object":"chat.completion.chunk","created":${nowSec},"model":"${state.model || "gpt-4o"}","choices":[{"index":0,"delta":{"content":${rawText}},"finish_reason":null}]}\n\n`;
+    return { sse, contentLength: Math.max(0, rawText.length - 2) };
+  }
+
+  if (trimmed.includes('"thinking_delta"')) {
+    const rawThinking = extractJsonString(trimmed, '"thinking":');
+    if (!rawThinking || rawThinking === '""') return null;
+    const nowSec = state.created || Math.floor(Date.now() / 1000);
+    const sse = `data: {"id":"chatcmpl-${state.messageId}","object":"chat.completion.chunk","created":${nowSec},"model":"${state.model || "gpt-4o"}","choices":[{"index":0,"delta":{"reasoning_content":${rawThinking}},"finish_reason":null}]}\n\n`;
+    return { sse, contentLength: Math.max(0, rawThinking.length - 2) };
+  }
+
+  return null;
+}
+
+/**
  * Create unified SSE transform stream
  * @param {object} options
  * @param {string} options.mode - Stream mode: translate, passthrough
@@ -315,6 +365,25 @@ export function createSSEStream(options = {}) {
 
         // Translate mode
         if (!trimmed) continue;
+
+        // Fast-path: Claude -> OpenAI text_delta / thinking_delta (zero-allocation parser)
+        if (
+          mode === STREAM_MODE.TRANSLATE &&
+          targetFormat === FORMATS.CLAUDE &&
+          sourceFormat === FORMATS.OPENAI &&
+          state?.messageId &&
+          (state.serverToolBlockIndex === undefined || state.serverToolBlockIndex === -1) &&
+          trimmed.charCodeAt(0) === 100 // 'd' for "data:"
+        ) {
+          const fastOutput = tryFastClaudeToOpenAI(trimmed, state);
+          if (fastOutput) {
+            totalContentLength += fastOutput.contentLength;
+            reqLogger?.appendConvertedChunk?.(fastOutput.sse);
+            controller.enqueue(sharedEncoder.encode(fastOutput.sse));
+            sseEmittedCount++;
+            continue;
+          }
+        }
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;

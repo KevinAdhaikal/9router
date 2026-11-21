@@ -193,7 +193,14 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {object} streamController - Stream controller from createStreamController
  */
 export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, onStreamComplete = null) {
+  const isWorkers = typeof process !== "undefined" && (process.env.CLOUDFLARE_WORKERS === "1" || typeof WebSocketPair !== "undefined");
+  // Direct C++ zero-CPU streaming in Cloudflare Workers when no format translation is required
+  if (!transformStream && isWorkers && providerResponse?.body) {
+    return providerResponse.body;
+  }
+
   let stallTimer = null;
+  let lastArmedAt = 0;
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
@@ -203,7 +210,11 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   const clearStall = () => {
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
   };
-  const armStall = () => {
+  const armStall = (force = false) => {
+    const now = Date.now();
+    // Throttle watchdog timer re-arm to avoid scheduling thousands of timers in V8
+    if (!force && stallTimer && (now - lastArmedAt < 5000)) return;
+    lastArmedAt = now;
     clearStall();
     stallTimer = setTimeout(() => {
       stallTimer = null;

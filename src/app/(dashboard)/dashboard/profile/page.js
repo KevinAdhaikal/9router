@@ -343,6 +343,36 @@ export default function ProfilePage() {
     }
   };
 
+  const updateComboEmptyPeek = async (comboEmptyPeek) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comboEmptyPeek }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, comboEmptyPeek }));
+      }
+    } catch (err) {
+      console.error("Failed to update combo empty peek:", err);
+    }
+  };
+
+  const updateHistorySessionHashing = async (historySessionHashing) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ historySessionHashing }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, historySessionHashing }));
+      }
+    } catch (err) {
+      console.error("Failed to update history session hashing:", err);
+    }
+  };
+
   const updateOidcForm = (field, value) => {
     setOidcForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -1523,6 +1553,47 @@ export default function ProfilePage() {
                 ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
                 : " Combos always start with their first model."}
             </p>
+          </div>
+        </Card>
+
+        {/* Performance & Optimization */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">bolt</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Performance & Optimization</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            {/* Combo Empty Peek */}
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Combo Empty Response Peek</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Buffer initial stream of combo models to detect empty responses. (Disable to save CPU on Cloudflare Workers)
+                </p>
+              </div>
+              <Toggle
+                checked={settings.comboEmptyPeek === true}
+                onChange={() => updateComboEmptyPeek(!(settings.comboEmptyPeek === true))}
+                disabled={loading}
+              />
+            </div>
+
+            {/* Chat History Session Hashing */}
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">History Session Hashing</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Compute SHA16 hash over assistant message history for session continuity. (Disable to save CPU on long multi-turn chats)
+                </p>
+              </div>
+              <Toggle
+                checked={settings.historySessionHashing === true}
+                onChange={() => updateHistorySessionHashing(!(settings.historySessionHashing === true))}
+                disabled={loading}
+              />
+            </div>
           </div>
         </Card>
 

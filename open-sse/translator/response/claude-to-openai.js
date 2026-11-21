@@ -9,7 +9,7 @@ import { toOpenAIFinish } from "../concerns/finishReason.js";
 // Create OpenAI chunk helper
 function createChunk(state, delta, finishReason = null) {
   return buildChunk(
-    { id: `chatcmpl-${state.messageId}`, created: Math.floor(Date.now() / 1000), model: state.model },
+    { id: `chatcmpl-${state.messageId}`, created: state.created || Math.floor(Date.now() / 1000), model: state.model },
     delta,
     finishReason
   );
@@ -26,6 +26,7 @@ export function claudeToOpenAIResponse(chunk, state) {
     case "message_start": {
       state.messageId = chunk.message?.id || `msg_${Date.now()}`;
       state.model = chunk.message?.model;
+      state.created = Math.floor(Date.now() / 1000);
       state.toolCallIndex = 0;
       // Claude sends input_tokens + cache_read + cache_creation here; message_delta
       // later carries only the final output_tokens. Capture cache now so the

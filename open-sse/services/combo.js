@@ -365,6 +365,7 @@ export async function handleComboChat({
   sessionSticky = true,
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
+  comboEmptyPeek = false,
 }) {
   let rotatedModels = models;
   let activeStickyModel = null;
@@ -478,21 +479,23 @@ export async function handleComboChat({
       // Success (2xx). A 2xx is necessary but NOT sufficient: Gemini aborts (e.g.
       // MALFORMED_FUNCTION_CALL) still return 200 and stream empty content, which would
       // otherwise be delivered as a successful empty answer with no failover.
-      // Peek the stream for real content before committing to this candidate.
+      // Peek the stream for real content before committing to this candidate (optional, configurable via settings).
       if (result.ok) {
         let peeked = null;
-        try {
-          peeked = await peekComboResponse(result, log);
-        } catch (peekErr) {
-          // peekStreamForContent is written not to throw; if reconstruction/Response
-          // construction ever does, result.body is already locked by getReader() and can no
-          // longer be streamed. Returning `result` would hand the client a locked, unreadable
-          // body. Degrade to a clean, valid (empty) SSE stream instead.
-          log.warn("COMBO", `empty-peek error on ${modelStr}, returning empty SSE: ${peekErr?.message || peekErr}`);
-          return new Response("data: [DONE]\n\n", {
-            status: 200,
-            headers: { "Content-Type": "text/event-stream" },
-          });
+        if (comboEmptyPeek) {
+          try {
+            peeked = await peekComboResponse(result, log);
+          } catch (peekErr) {
+            // peekStreamForContent is written not to throw; if reconstruction/Response
+            // construction ever does, result.body is already locked by getReader() and can no
+            // longer be streamed. Returning `result` would hand the client a locked, unreadable
+            // body. Degrade to a clean, valid (empty) SSE stream instead.
+            log.warn("COMBO", `empty-peek error on ${modelStr}, returning empty SSE: ${peekErr?.message || peekErr}`);
+            return new Response("data: [DONE]\n\n", {
+              status: 200,
+              headers: { "Content-Type": "text/event-stream" },
+            });
+          }
         }
 
         if (!peeked) {

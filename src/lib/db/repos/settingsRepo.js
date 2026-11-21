@@ -46,6 +46,9 @@ const DEFAULT_SETTINGS = {
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   dnsToolEnabled: {},
+  // Optimization flags for lightweight runtimes (Cloudflare Workers)
+  comboEmptyPeek: false,
+  historySessionHashing: false,
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
 };

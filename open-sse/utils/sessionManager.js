@@ -213,10 +213,10 @@ function assistantTextSessionId(scope, body) {
  * @param {string} [opts.scope] - Provider scope to isolate cache keys across providers
  * @returns {{sessionId: string, ephemeral: boolean}} A session id plus whether it is one-shot
  */
-export function resolveSessionIdentity({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
+export function resolveSessionIdentity({ headers, body, connectionId, workspaceId, scope = "", enableHistoryHashing = false } = {}) {
     const client = extractClientSessionId(headers, body, scope);
     if (client) return { sessionId: client, ephemeral: false };
-    const fromAssistant = scope === "kiro" ? null : assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
+    const fromAssistant = (scope === "kiro" || !enableHistoryHashing) ? null : assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
     if (fromAssistant) return { sessionId: fromAssistant, ephemeral: false };
     const ws = normalizeSessionId(workspaceId);
     if (ws) return { sessionId: ws, ephemeral: false };

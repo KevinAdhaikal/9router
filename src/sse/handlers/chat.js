@@ -55,7 +55,12 @@ export async function handleChat(request, clientRawRequest = null) {
   const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
   if (contextMarker) body.model = modelStr;
 
-  const session = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
+  const settings = await getSettings();
+  const session = resolveSessionIdentity({
+    headers: clientRawRequest?.headers,
+    body,
+    enableHistoryHashing: settings?.historySessionHashing === true,
+  });
   const sessionId = session?.sessionId || null;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
@@ -71,7 +76,6 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Enforce API key if enabled in settings
-  const settings = await getSettings();
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
@@ -147,6 +151,7 @@ export async function handleChat(request, clientRawRequest = null) {
       comboName: modelStr,
       comboStrategy,
       comboStickyLimit,
+      comboEmptyPeek: settings?.comboEmptyPeek === true,
       sessionId,
       smartPolicy: comboCfg.smartPolicy || "smart",
       sessionSticky: comboCfg.sessionSticky !== false,
@@ -228,7 +233,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
       const comboCfg = comboStrategies[modelStr] || {};
-      const nestedSession = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
+      const nestedSession = resolveSessionIdentity({
+        headers: clientRawRequest?.headers,
+        body,
+        enableHistoryHashing: settings?.historySessionHashing === true,
+      });
       const nestedSessionId = nestedSession?.sessionId || null;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
@@ -242,6 +251,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         comboName: modelStr,
         comboStrategy,
         comboStickyLimit,
+        comboEmptyPeek: settings?.comboEmptyPeek === true,
         sessionId: nestedSessionId,
         smartPolicy: comboCfg.smartPolicy || "smart",
         sessionSticky: comboCfg.sessionSticky !== false,
