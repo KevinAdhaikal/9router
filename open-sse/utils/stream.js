@@ -99,6 +99,42 @@ export function createSSEStream(options = {}) {
   let finalized = false;
   let completionFlushTimer = null;
 
+  // Track if a chunk with non-null finish_reason was emitted (guarantees OpenAI SDK compliance)
+  let finishReasonEmitted = false;
+  let lastChunkId = null;
+  let lastChunkModel = null;
+  let lastChunkCreated = null;
+  let lastChunkFingerprint = null;
+
+  // Helper to ensure a terminal OpenAI-compatible chunk with finish_reason is always sent
+  const ensureOpenAIFinishChunkEmitted = (controller, finishReason = "stop") => {
+    if (finishReasonEmitted) return;
+    const fallbackId = state?.messageId
+      ? (state.messageId.startsWith("chatcmpl-") ? state.messageId : `chatcmpl-${state.messageId}`)
+      : (lastChunkId || `chatcmpl-${Date.now()}`);
+    const finalChunk = {
+      id: fallbackId,
+      object: "chat.completion.chunk",
+      created: lastChunkCreated || Math.floor(Date.now() / 1000),
+      model: state?.model || lastChunkModel || model || "unknown",
+      choices: [{
+        index: 0,
+        delta: {},
+        finish_reason: finishReason
+      }]
+    };
+    if (lastChunkFingerprint) finalChunk.system_fingerprint = lastChunkFingerprint;
+    const effectiveUsage = mode === STREAM_MODE.PASSTHROUGH ? usage : state?.usage;
+    if (effectiveUsage) {
+      finalChunk.usage = filterUsageForFormat(addBufferToUsage(effectiveUsage), FORMATS.OPENAI);
+    }
+    const finishSSE = `data: ${JSON.stringify(finalChunk)}\n\n`;
+    reqLogger?.appendConvertedChunk?.(finishSSE);
+    controller.enqueue(sharedEncoder.encode(finishSSE));
+    finishReasonEmitted = true;
+    sseEmittedCount++;
+  };
+
   // Lane quirk: upstream streams thinking under the OpenRouter aliases
   // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
   // Free's MiMo route does. Lift it on every passthrough delta so OpenAI-shaped
@@ -159,6 +195,7 @@ export function createSSEStream(options = {}) {
       buffer = lines.pop() || "";
 
       for (const line of lines) {
+        if (streamDoneSent) continue;
         const trimmed = line.trim();
         if (isDebugEnabled && trimmed) {
           sseLineCount++;
@@ -181,6 +218,10 @@ export function createSSEStream(options = {}) {
 
           // Upstream already sent the sentinel; flush() must not append a second one.
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
+            if (!isGeminiFamily && !finishReasonEmitted) {
+              ensureOpenAIFinishChunkEmitted(controller, "stop");
+            }
             streamDoneSent = true;
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
@@ -198,6 +239,14 @@ export function createSSEStream(options = {}) {
               (liftAliases && (dataStr.includes('"reasoning') || dataStr.includes('"thought')));
 
             if (!needsParse) {
+              if (!lastChunkId) {
+                const idMatch = dataStr.match(/"id"\s*:\s*"([^"]+)"/);
+                if (idMatch) lastChunkId = idMatch[1];
+              }
+              if (!lastChunkModel) {
+                const modelMatch = dataStr.match(/"model"\s*:\s*"([^"]+)"/);
+                if (modelMatch) lastChunkModel = modelMatch[1];
+              }
               const fastOutput = (line.startsWith("data:") && !line.startsWith("data: "))
                 ? "data: " + line.slice(5) + "\n"
                 : line + "\n";
@@ -208,6 +257,13 @@ export function createSSEStream(options = {}) {
 
             try {
               let parsed = JSON.parse(dataStr);
+              if (parsed?.id) lastChunkId = parsed.id;
+              if (parsed?.model) lastChunkModel = parsed.model;
+              if (parsed?.created) lastChunkCreated = parsed.created;
+              if (parsed?.system_fingerprint) lastChunkFingerprint = parsed.system_fingerprint;
+              if (parsed?.choices?.[0]?.finish_reason) {
+                finishReasonEmitted = true;
+              }
 
               const idFixed = fixInvalidId(parsed);
 
@@ -377,13 +433,21 @@ export function createSSEStream(options = {}) {
             sseEmittedCount++;
           }
 
-          if (keepsOpenAIResponsesFormat && !streamDoneSent) {
+          // If client format is standard OpenAI chat completions, ensure finish_reason before [DONE]
+          if (sourceFormat === FORMATS.OPENAI && !finishReasonEmitted) {
+            const finishReason = state?.finishReason || (state?.toolCalls?.size > 0 || state?.geminiToolCallCount > 0 ? "tool_calls" : "stop");
+            ensureOpenAIFinishChunkEmitted(controller, finishReason);
+          }
+
+          if ((keepsOpenAIResponsesFormat || sourceFormat === FORMATS.OPENAI) && !streamDoneSent) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
+            streamDoneSent = true;
           }
-          streamDoneSent = true;
+
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
+          finalizeStream();
           continue;
         }
 
@@ -461,6 +525,14 @@ export function createSSEStream(options = {}) {
               continue; // Skip this empty chunk
             }
 
+            if (sourceFormat === FORMATS.OPENAI && item.choices?.[0]?.finish_reason) {
+              finishReasonEmitted = true;
+            }
+            if (item.id) lastChunkId = item.id;
+            if (item.model) lastChunkModel = item.model;
+            if (item.created) lastChunkCreated = item.created;
+            if (item.system_fingerprint) lastChunkFingerprint = item.system_fingerprint;
+
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
@@ -499,6 +571,11 @@ export function createSSEStream(options = {}) {
       dbg("SSE", `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | emitted=${sseEmittedCount} | events=[${evtSummary}]`);
       trackPendingRequest(model, provider, connectionId, false);
       try {
+        if (streamDoneSent) {
+          finalizeStream();
+          return;
+        }
+
         const remaining = decoder.decode();
         if (remaining) buffer += remaining;
 
@@ -508,7 +585,7 @@ export function createSSEStream(options = {}) {
           // below, #5592).
           const tail = buffer.trim();
           const tailIsDone = tail.startsWith("data:") && tail.slice(5).trim() === "[DONE]";
-          if (!tailIsDone && buffer) {
+          if (!tailIsDone && tail) {
             let output = buffer;
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
               output = "data: " + buffer.slice(5);
@@ -518,15 +595,20 @@ export function createSSEStream(options = {}) {
           }
 
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
-          // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
+          // Some clients (e.g. OpenClaw, Semantic Kernel, OpenAI SDK) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
-          // Without it they can hang until timeout and trigger failover.
+          // and a terminal chunk with finish_reason.
           // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
           const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
+          if (!isGeminiFamily && !finishReasonEmitted) {
+            ensureOpenAIFinishChunkEmitted(controller, "stop");
+          }
+
           if (!streamDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
+            streamDoneSent = true;
           }
 
           finalizeStream();
@@ -561,9 +643,13 @@ export function createSSEStream(options = {}) {
             if (translated?.length > 0) {
               for (const item of translated) {
                 if (item === null || item === undefined) continue;
+                if (sourceFormat === FORMATS.OPENAI && item.choices?.[0]?.finish_reason) {
+                  finishReasonEmitted = true;
+                }
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
+                sseEmittedCount++;
               }
             }
           }
@@ -581,9 +667,13 @@ export function createSSEStream(options = {}) {
         if (flushed?.length > 0) {
           for (const item of flushed) {
             if (item === null || item === undefined) continue;
+            if (sourceFormat === FORMATS.OPENAI && item.choices?.[0]?.finish_reason) {
+              finishReasonEmitted = true;
+            }
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
+            sseEmittedCount++;
           }
         }
 
@@ -594,9 +684,17 @@ export function createSSEStream(options = {}) {
           reqLogger?.appendConvertedChunk?.(failedOutput);
           controller.enqueue(sharedEncoder.encode(failedOutput));
           openAIResponsesTerminalSeen = true;
+          sseEmittedCount++;
         }
 
-        if (keepsOpenAIResponsesFormat && !openAIResponsesDoneSent && !streamDoneSent) {
+        // Ensure OpenAI format always has finish_reason before stream closure
+        if (sourceFormat === FORMATS.OPENAI && !finishReasonEmitted) {
+          const finishReason = state?.finishReason || (state?.toolCalls?.size > 0 || state?.geminiToolCallCount > 0 ? "tool_calls" : "stop");
+          ensureOpenAIFinishChunkEmitted(controller, finishReason);
+        }
+
+        // Guarantee OpenAI and Responses formats always end with data: [DONE]\n\n
+        if ((keepsOpenAIResponsesFormat || sourceFormat === FORMATS.OPENAI) && !openAIResponsesDoneSent && !streamDoneSent) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
