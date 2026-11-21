@@ -57,17 +57,13 @@ export {
   getDisabledModels, getDisabledByProvider, disableModels, enableModels,
 } from "./repos/disabledModelsRepo.js";
 
-// Usage
+// Usage & Request details (no-ops for Cloudflare Workers)
 export {
   statsEmitter, trackPendingRequest, getActiveRequests,
   saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
   appendRequestLog, getRecentLogs,
-} from "./repos/usageRepo.js";
-
-// Request details
-export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
-} from "./repos/requestDetailsRepo.js";
+} from "@/lib/usageDb.js";
 
 // Export/import full DB
 export async function exportDb() {

@@ -1,4 +1,4 @@
-import open from "open";
+import open from "../utils/open.js";
 import { OAuthService } from "./oauth.js";
 import { CODEX_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";

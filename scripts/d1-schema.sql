@@ -76,45 +76,6 @@ CREATE TABLE IF NOT EXISTS kv (
 );
 CREATE INDEX IF NOT EXISTS idx_kv_scope ON kv(scope);
 
-CREATE TABLE IF NOT EXISTS usageHistory (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  timestamp TEXT NOT NULL,
-  provider TEXT,
-  model TEXT,
-  connectionId TEXT,
-  apiKey TEXT,
-  endpoint TEXT,
-  promptTokens INTEGER DEFAULT 0,
-  completionTokens INTEGER DEFAULT 0,
-  cost REAL DEFAULT 0,
-  status TEXT,
-  tokens TEXT,
-  meta TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_uh_ts ON usageHistory(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider);
-CREATE INDEX IF NOT EXISTS idx_uh_model ON usageHistory(model);
-CREATE INDEX IF NOT EXISTS idx_uh_conn ON usageHistory(connectionId);
-
-CREATE TABLE IF NOT EXISTS usageDaily (
-  dateKey TEXT PRIMARY KEY,
-  data TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS requestDetails (
-  id TEXT PRIMARY KEY,
-  timestamp TEXT NOT NULL,
-  provider TEXT,
-  model TEXT,
-  connectionId TEXT,
-  status TEXT,
-  data TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_rd_ts ON requestDetails(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider);
-CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model);
-CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId);
-
 -- Initial default settings and default api key
 INSERT OR IGNORE INTO settings (id, data) VALUES (1, '{"capacityAdapter":{"vision":{"enabled":false,"roundRobin":false,"models":[]},"audioInput":{"enabled":false,"roundRobin":false,"models":[]}}}');
 INSERT OR IGNORE INTO apiKeys (id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow) VALUES ('default-key', 'sk-9router-default-api-key', 'Default Key', 'default', 1, datetime('now'), 0, '[]');

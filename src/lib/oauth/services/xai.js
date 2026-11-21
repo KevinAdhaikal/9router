@@ -1,4 +1,4 @@
-import open from "open";
+import open from "../utils/open.js";
 import { OAuthService } from "./oauth.js";
 import crypto from "crypto";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "../constants/xai.js";

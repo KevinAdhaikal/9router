@@ -442,57 +442,8 @@ let _pafPromise = null;
 let _socksPromise = null;
 
 /** fetch-compatible wrapper over socks-proxy-agent (undici ProxyAgent has no socks support). */
-async function socksFetch(url, init, proxyUrl) {
-  if (!_socksPromise) {
-    _socksPromise = import("socks-proxy-agent")
-      .then((m) => m.SocksProxyAgent || m.default?.SocksProxyAgent || m.default)
-      .catch((e) => {
-        console.log(`${new Date().toISOString().slice(11,23)} [mimo-login] socks-proxy-agent unavailable:`, e?.message || e);
-        return null;
-      });
-  }
-  const SocksProxyAgent = await _socksPromise;
-  if (!SocksProxyAgent) throw new Error("socks agent unavailable");
-
-  const nodeUrl = new URL(url);
-  // Literal specifiers on both branches — webpack forbids fully dynamic import().
-  const protoMod = nodeUrl.protocol === "http:" ? await import("node:http") : await import("node:https");
-  const lib = protoMod.default ?? protoMod;
-  const { Readable } = await import("node:stream");
-
-  let headers = {};
-  const raw = init?.headers;
-  if (raw instanceof Headers) for (const [k, v] of raw) headers[k] = v;
-  else if (raw) headers = { ...raw };
-
-  let body = init?.body;
-  if (body && typeof body !== "string" && !Buffer.isBuffer(body)) body = Buffer.from(body);
-  if (body) headers["content-length"] = String(Buffer.byteLength(body));
-
-  const agent = new SocksProxyAgent(proxyUrl);
-  return new Promise((resolve, reject) => {
-    const req = lib.request(
-      nodeUrl,
-      { method: init?.method || "GET", agent, headers, timeout: 20000 },
-      (res) => {
-        const outHeaders = new Headers();
-        for (const [k, v] of Object.entries(res.headers || {})) {
-          if (Array.isArray(v)) v.forEach((x) => outHeaders.append(k, String(x)));
-          else if (v != null) outHeaders.set(k, String(v));
-        }
-        resolve(new Response(Readable.toWeb(res), { status: res.statusCode || 200, headers: outHeaders }));
-      },
-    );
-    const signal = init?.signal;
-    if (signal) {
-      if (signal.aborted) req.destroy(new Error("aborted"));
-      else signal.addEventListener("abort", () => req.destroy(new Error("aborted")), { once: true });
-    }
-    req.on("timeout", () => req.destroy(new Error("socks fetch timeout")));
-    req.on("error", reject);
-    if (body) req.write(body);
-    req.end();
-  });
+async function socksFetch() {
+  throw new Error("socks proxy is not supported in Cloudflare Workers");
 }
 
 async function loginFetch(url, init, sessionProxyUrl = null) {

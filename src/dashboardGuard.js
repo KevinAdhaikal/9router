@@ -60,7 +60,6 @@ const PROTECTED_API_PATHS = [
   "/api/proxy-pools",
   "/api/combos",
   "/api/models",
-  "/api/usage",
   "/api/oauth",
   "/api/cloud",
   "/api/media-providers",
@@ -89,9 +88,6 @@ const LOCAL_ONLY_PATHS = [
   "/api/oauth/minimax-code/lease",
   "/api/oauth/minimax-code-global/lease",
   "/api/auth/reset-password",
-  "/api/headroom/start",
-  "/api/headroom/stop",
-  "/api/headroom/proxy",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);

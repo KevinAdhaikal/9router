@@ -152,13 +152,7 @@ function killProcess(pid, force = false, sudoPassword = null) {
 }
 
 function deriveKey() {
-  try {
-    const { machineIdSync } = require("node-machine-id");
-    const raw = machineIdSync();
-    return crypto.createHash("sha256").update(raw + ENCRYPT_SALT).digest();
-  } catch {
-    return crypto.createHash("sha256").update(ENCRYPT_SALT).digest();
-  }
+  return crypto.createHash("sha256").update(ENCRYPT_SALT).digest();
 }
 
 function encryptPassword(plaintext) {

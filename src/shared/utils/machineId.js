@@ -1,4 +1,3 @@
-import { machineIdSync } from 'node-machine-id';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -11,19 +10,18 @@ const CLI_AUTH_SALT = '9r-cli-auth';
 let cachedRawId = null;
 let cachedCliSecret = null;
 
-// Persist raw machine ID to file → guarantees CLI/server/middleware see same value
-// even when machineIdSync fails or returns inconsistent values across runtimes.
+// Raw machine ID for Cloudflare Workers / Node runtime
 function loadRawMachineId() {
   if (cachedRawId) return cachedRawId;
+  if (process.env.MACHINE_ID) {
+    cachedRawId = process.env.MACHINE_ID;
+    return cachedRawId;
+  }
   try {
     cachedRawId = fs.readFileSync(MACHINE_ID_FILE, 'utf8').trim();
     if (cachedRawId) return cachedRawId;
   } catch {}
-  try {
-    cachedRawId = machineIdSync();
-  } catch {
-    cachedRawId = crypto.randomUUID();
-  }
+  cachedRawId = "9router-edge-machine-id";
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(MACHINE_ID_FILE, cachedRawId, { mode: 0o600 });

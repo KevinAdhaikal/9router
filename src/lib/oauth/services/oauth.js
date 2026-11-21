@@ -1,4 +1,4 @@
-import open from "open";
+import open from "../utils/open.js";
 import { startLocalServer } from "../utils/server.js";
 import { generatePKCE } from "../utils/pkce.js";
 import { spinner as createSpinner } from "../utils/ui.js";

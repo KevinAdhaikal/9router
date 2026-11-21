@@ -84,14 +84,6 @@ const getPageInfo = (pathname) => {
       icon: "layers",
       breadcrumbs: [],
     };
-  if (pathname.includes("/usage"))
-    return {
-      title: "Usage & Analytics",
-      description:
-        "Monitor your API usage, token consumption, and request logs",
-      icon: "bar_chart",
-      breadcrumbs: [],
-    };
   if (pathname.includes("/auth-files"))
     return {
       title: "Auth Files",
@@ -111,13 +103,6 @@ const getPageInfo = (pathname) => {
       title: "MITM Proxy",
       description: "Intercept CLI tool traffic and route through 9Router",
       icon: "security",
-      breadcrumbs: [],
-    };
-  if (pathname.includes("/token-saver"))
-    return {
-      title: "Token Saver",
-      description: "Compress prompts and outputs to save tokens",
-      icon: "savings",
       breadcrumbs: [],
     };
   if (pathname.includes("/cli-tools"))

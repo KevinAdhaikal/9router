@@ -1,48 +1,49 @@
-import chalk from "chalk";
-import ora from "ora";
-
 /**
- * UI Helper Functions
+ * UI Helper Functions (Plain console logging without chalk/ora)
  */
 
 export function success(message) {
-  console.log(chalk.green(`\n✓ ${message}\n`));
+  console.log(`\n✓ ${message}\n`);
 }
 
 export function error(message) {
-  console.log(chalk.red(`\n✗ ${message}\n`));
+  console.error(`\n✗ ${message}\n`);
 }
 
 export function info(message) {
-  console.log(chalk.blue(`\n${message}\n`));
+  console.log(`\n${message}\n`);
 }
 
 export function warn(message) {
-  console.log(chalk.yellow(`\n⚠ ${message}\n`));
+  console.warn(`\n⚠ ${message}\n`);
 }
 
 export function gray(message) {
-  console.log(chalk.gray(message));
+  console.log(message);
 }
 
 export function spinner(text) {
-  return ora(text);
+  return {
+    start: function () { return this; },
+    stop: function () { return this; },
+    succeed: function (msg) { if (msg) console.log(`✓ ${msg}`); return this; },
+    fail: function (msg) { if (msg) console.error(`✗ ${msg}`); return this; },
+    warn: function (msg) { if (msg) console.warn(`⚠ ${msg}`); return this; },
+    text: text || "",
+  };
 }
 
 export function printSection(title) {
-  console.log(chalk.blue(`\n${title}\n`));
+  console.log(`\n${title}\n`);
 }
 
 export function printKeyValue(key, value, isSuccess = false) {
-  const color = isSuccess ? chalk.green : chalk.gray;
-  console.log(color(`  ${key}: ${value}`));
+  console.log(`  ${key}: ${value}`);
 }
 
 export function printList(items, isSuccess = false) {
   const symbol = isSuccess ? "✓" : "✗";
-  const color = isSuccess ? chalk.green : chalk.gray;
   items.forEach((item) => {
-    console.log(color(`  ${symbol} ${item}`));
+    console.log(`  ${symbol} ${item}`);
   });
 }
-

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import open from "open";
+import open from "../utils/open.js";
 import { IFLOW_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
 import { startLocalServer } from "../utils/server.js";

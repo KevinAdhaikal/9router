@@ -110,52 +110,6 @@ export const TABLES = {
     primaryKey: "PRIMARY KEY (scope, key)",
     indexes: ["CREATE INDEX IF NOT EXISTS idx_kv_scope ON kv(scope)"],
   },
-  usageHistory: {
-    columns: {
-      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
-      timestamp: "TEXT NOT NULL",
-      provider: "TEXT",
-      model: "TEXT",
-      connectionId: "TEXT",
-      apiKey: "TEXT",
-      endpoint: "TEXT",
-      promptTokens: "INTEGER DEFAULT 0",
-      completionTokens: "INTEGER DEFAULT 0",
-      cost: "REAL DEFAULT 0",
-      status: "TEXT",
-      tokens: "TEXT",
-      meta: "TEXT",
-    },
-    indexes: [
-      "CREATE INDEX IF NOT EXISTS idx_uh_ts ON usageHistory(timestamp DESC)",
-      "CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider)",
-      "CREATE INDEX IF NOT EXISTS idx_uh_model ON usageHistory(model)",
-      "CREATE INDEX IF NOT EXISTS idx_uh_conn ON usageHistory(connectionId)",
-    ],
-  },
-  usageDaily: {
-    columns: {
-      dateKey: "TEXT PRIMARY KEY",
-      data: "TEXT NOT NULL",
-    },
-  },
-  requestDetails: {
-    columns: {
-      id: "TEXT PRIMARY KEY",
-      timestamp: "TEXT NOT NULL",
-      provider: "TEXT",
-      model: "TEXT",
-      connectionId: "TEXT",
-      status: "TEXT",
-      data: "TEXT NOT NULL",
-    },
-    indexes: [
-      "CREATE INDEX IF NOT EXISTS idx_rd_ts ON requestDetails(timestamp DESC)",
-      "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
-      "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
-      "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
-    ],
-  },
 };
 
 export function buildCreateTableSql(name, def) {

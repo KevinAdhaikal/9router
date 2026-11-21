@@ -122,15 +122,9 @@ export async function POST(request) {
 
     await fs.writeFile(getOmpModelsYmlPath(), ymlContent, "utf-8");
 
-    // Best-effort update to agent.db if better-sqlite3 or node:sqlite is present
+    // Best-effort update to agent.db if sqlite is present
     try {
-      let Database;
-      try {
-        const mod = await import("better-sqlite3");
-        Database = mod.default || mod;
-      } catch {
-        // fallback ignored
-      }
+      let Database = null;
       if (Database) {
         const dbPath = getOmpDbPath();
         const db = new Database(dbPath);
