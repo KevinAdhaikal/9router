@@ -146,6 +146,7 @@ export function createSSEStream(options = {}) {
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
   let finalized = false;
   let completionFlushTimer = null;
+  let seenFinishReason = false;
 
   // Lane quirk: upstream streams thinking under the OpenRouter aliases
   // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
@@ -324,6 +325,35 @@ export function createSSEStream(options = {}) {
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
+              if (parsed.choices?.[0]) {
+                const choice = parsed.choices[0];
+                if (seenFinishReason) {
+                  // Drop trailing content chunks after finish_reason has already been emitted
+                  continue;
+                }
+                if (choice.finish_reason) {
+                  const finishReason = choice.finish_reason;
+                  const delta = choice.delta || {};
+                  const hasContent =
+                    (typeof delta.content === "string" && delta.content !== "") ||
+                    (typeof delta.reasoning_content === "string" && delta.reasoning_content !== "") ||
+                    (typeof delta.reasoning === "string" && delta.reasoning !== "") ||
+                    (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0);
+
+                  if (hasContent) {
+                    choice.finish_reason = null;
+                    const chunk1 = `data: ${JSON.stringify(parsed)}\n\n`;
+                    reqLogger?.appendConvertedChunk?.(chunk1);
+                    controller.enqueue(sharedEncoder.encode(chunk1));
+                    sseEmittedCount++;
+
+                    choice.delta = {};
+                    choice.finish_reason = finishReason;
+                  }
+                  seenFinishReason = true;
+                }
+              }
+
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
@@ -491,6 +521,35 @@ export function createSSEStream(options = {}) {
             // Filter empty chunks
             if (!hasValuableContent(item, sourceFormat)) {
               continue; // Skip this empty chunk
+            }
+
+            if (sourceFormat === FORMATS.OPENAI && item.choices?.[0]) {
+              const choice = item.choices[0];
+              if (seenFinishReason) {
+                // Drop trailing content chunks after finish_reason has already been emitted
+                continue;
+              }
+              if (choice.finish_reason) {
+                const finishReason = choice.finish_reason;
+                const delta = choice.delta || {};
+                const hasContent =
+                  (typeof delta.content === "string" && delta.content !== "") ||
+                  (typeof delta.reasoning_content === "string" && delta.reasoning_content !== "") ||
+                  (typeof delta.reasoning === "string" && delta.reasoning !== "") ||
+                  (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0);
+
+                if (hasContent) {
+                  choice.finish_reason = null;
+                  const output1 = formatSSE(item, sourceFormat);
+                  reqLogger?.appendConvertedChunk?.(output1);
+                  controller.enqueue(sharedEncoder.encode(output1));
+                  sseEmittedCount++;
+
+                  choice.delta = {};
+                  choice.finish_reason = finishReason;
+                }
+                seenFinishReason = true;
+              }
             }
 
             // Inject estimated usage if finish chunk has no valid usage
@@ -674,5 +733,141 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     body,
     onStreamComplete,
     apiKey
+  });
+}
+
+/**
+ * Ultra-light zero-allocation Finish Reason Guard for OpenAI streaming chunks.
+ * Enforces strict OpenAI streaming specification:
+ * 1. Content/reasoning deltas are never emitted in the same chunk as non-null finish_reason.
+ * 2. Any trailing content/reasoning tokens received after finish_reason has been emitted are dropped.
+ * 3. Minimal CPU footprint for Cloudflare Workers Free Tier (no JSON parsing on regular tokens).
+ */
+export function createOpenAIFinishGuardStream(onStreamComplete = null) {
+  const encoder = sharedEncoder;
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  let buffer = "";
+  let seenFinish = false;
+  let doneSent = false;
+  const t0 = Date.now();
+
+  return new TransformStream({
+    transform(chunk, controller) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+
+        if (trimmed.startsWith("data:")) {
+          const dataContent = trimmed.slice(5).trim();
+
+          if (dataContent === "[DONE]") {
+            doneSent = true;
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            continue;
+          }
+
+          // If finish_reason was already emitted:
+          if (seenFinish) {
+            // Check if this chunk is a usage-only chunk
+            if (dataContent.includes('"usage"') && !dataContent.includes('"content"') && !dataContent.includes('"reasoning_content"') && !dataContent.includes('"tool_calls"')) {
+              try {
+                const parsed = JSON.parse(dataContent);
+                parsed.choices = [];
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`));
+              } catch {
+                // Ignore parse errors on trailing chunks
+              }
+            }
+            // Drop any trailing content / reasoning deltas post-finish
+            continue;
+          }
+
+          // Fast path: if line has finish_reason: null, pass through directly without JSON parse
+          if (dataContent.includes('"finish_reason":null') || dataContent.includes('"finish_reason": null')) {
+            controller.enqueue(encoder.encode(`data: ${dataContent}\n\n`));
+            continue;
+          }
+
+          // If line contains finish_reason and it's not null:
+          if (dataContent.includes('"finish_reason"')) {
+            try {
+              const parsed = JSON.parse(dataContent);
+              const choice = parsed.choices?.[0];
+
+              if (choice && choice.finish_reason) {
+                const finishReason = choice.finish_reason;
+                const delta = choice.delta || {};
+                const hasContent =
+                  (typeof delta.content === "string" && delta.content !== "") ||
+                  (typeof delta.reasoning_content === "string" && delta.reasoning_content !== "") ||
+                  (typeof delta.reasoning === "string" && delta.reasoning !== "") ||
+                  (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0);
+
+                if (hasContent) {
+                  // Chunk 1: Content delta with finish_reason: null
+                  const contentChunk = {
+                    ...parsed,
+                    choices: [{
+                      ...choice,
+                      finish_reason: null
+                    }]
+                  };
+                  delete contentChunk.usage;
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(contentChunk)}\n\n`));
+
+                  // Chunk 2: Clean terminal finish chunk with empty delta
+                  const finishChunk = {
+                    ...parsed,
+                    choices: [{
+                      ...choice,
+                      delta: {},
+                      finish_reason: finishReason
+                    }]
+                  };
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
+                } else {
+                  // No content in this chunk, emit as-is
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`));
+                }
+
+                seenFinish = true;
+                continue;
+              }
+            } catch {
+              // If JSON.parse fails, pass line through
+            }
+          }
+
+          // Any other data chunk
+          controller.enqueue(encoder.encode(`data: ${dataContent}\n\n`));
+        } else {
+          controller.enqueue(encoder.encode(`${trimmed}\n\n`));
+        }
+      }
+    },
+
+    flush(controller) {
+      if (buffer.trim()) {
+        const line = buffer.trim();
+        if (line.startsWith("data:") && line.slice(5).trim() === "[DONE]") {
+          doneSent = true;
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        }
+      }
+      if (!doneSent) {
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      }
+      if (onStreamComplete) {
+        try {
+          onStreamComplete({ content: "", thinking: null }, null, t0);
+        } catch {}
+      }
+    }
   });
 }

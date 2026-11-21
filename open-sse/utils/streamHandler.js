@@ -198,6 +198,10 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   if (!transformStream && isWorkers && providerResponse?.body) {
     return providerResponse.body;
   }
+  // In Workers with transform stream (e.g. finish guard): pipe directly without intermediate JS tap layers
+  if (transformStream && isWorkers && providerResponse?.body) {
+    return providerResponse.body.pipeThrough(transformStream);
+  }
 
   let stallTimer = null;
   let lastArmedAt = 0;

@@ -49,6 +49,7 @@ const DEFAULT_SETTINGS = {
   // Optimization flags for lightweight runtimes (Cloudflare Workers)
   comboEmptyPeek: false,
   historySessionHashing: false,
+  streamFinishGuard: true,
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
 };

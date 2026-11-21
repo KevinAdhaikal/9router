@@ -236,7 +236,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const nestedSession = resolveSessionIdentity({
         headers: clientRawRequest?.headers,
         body,
-        enableHistoryHashing: settings?.historySessionHashing === true,
+        enableHistoryHashing: chatSettings?.historySessionHashing === true,
       });
       const nestedSessionId = nestedSession?.sessionId || null;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
@@ -333,6 +333,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       providerOverrides: (chatSettings.providerOverrides || {})[provider] || null,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      streamFinishGuard: chatSettings?.streamFinishGuard !== false,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
