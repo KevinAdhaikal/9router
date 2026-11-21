@@ -28,6 +28,7 @@ function json(data, options = {}) {
     ...options,
     headers: {
       "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "public, max-age=30, stale-while-revalidate=60",
       ...options.headers,
     },
   });

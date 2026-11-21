@@ -68,6 +68,25 @@ export function extractClientApiKey(request) {
  * decides what an identified key may call.
  */
 export async function getKeyAccessContext(request) {
+  const verified = request?.headers?.get ? request.headers.get("x-9r-auth-verified") : null;
+  if (verified === "1") {
+    const isRestricted = request.headers.get("x-9r-auth-key-restricted") === "1";
+    if (!isRestricted) return null;
+    const rawAllow = request.headers.get("x-9r-auth-key-allow");
+    let allow = [];
+    if (rawAllow) {
+      try { allow = JSON.parse(rawAllow); } catch {}
+    }
+    const keyId = request.headers.get("x-9r-auth-key-id") || "";
+    return {
+      keyId,
+      keyName: keyId,
+      allow,
+      _sets: null,
+    };
+  }
+  if (verified === "local") return null;
+
   const apiKey = extractClientApiKey(request);
   if (!apiKey) return null;
   const record = await getApiKeyByKey(apiKey);

@@ -259,6 +259,16 @@ export async function updateProviderConnection(id, data) {
     if (data.priority !== undefined) await reorderInTx(db, existing.provider);
     result = merged;
   });
+  if (_allConnectionsCache && result) {
+    const idx = _allConnectionsCache.findIndex((c) => c.id === id);
+    if (idx !== -1) {
+      _allConnectionsCache[idx] = result;
+      if (data.priority !== undefined) {
+        _allConnectionsCache.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+      }
+      return result;
+    }
+  }
   invalidateConnectionsCache();
   return result;
 }

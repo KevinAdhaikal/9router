@@ -351,6 +351,9 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
   };
 }
 
+const _modelsCache = new Map();
+const MODELS_CACHE_TTL_MS = 20_000;
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -360,41 +363,26 @@ export async function buildModelsList(kindFilter, options = {}) {
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
-  let connections = [];
-  try {
-    connections = await getProviderConnections();
-    connections = connections.filter(c => c.isActive !== false);
-  } catch (e) {
-    console.log("Could not fetch providers, returning all models");
+  const cacheKey = `${kindFilter.slice().sort().join(",")}|${skipDynamicFetch ? "1" : "0"}`;
+  const now = Date.now();
+  const cached = _modelsCache.get(cacheKey);
+  if (cached && now < cached.expiresAt) {
+    return cached.data;
   }
 
-  let combos = [];
-  try {
-    combos = await getCombos();
-  } catch (e) {
-    console.log("Could not fetch combos");
-  }
+  const [connectionsRes, combosRes, customModelsRes, modelAliasesRes, disabledByAliasRes] = await Promise.all([
+    getProviderConnections().catch(() => []),
+    getCombos().catch(() => []),
+    getCustomModels().catch(() => []),
+    getModelAliases().catch(() => ({})),
+    getDisabledModels().catch(() => ({})),
+  ]);
 
-  let customModels = [];
-  try {
-    customModels = await getCustomModels();
-  } catch (e) {
-    console.log("Could not fetch custom models");
-  }
-
-  let modelAliases = {};
-  try {
-    modelAliases = await getModelAliases();
-  } catch (e) {
-    console.log("Could not fetch model aliases");
-  }
-
-  let disabledByAlias = {};
-  try {
-    disabledByAlias = await getDisabledModels();
-  } catch (e) {
-    console.log("Could not fetch disabled models");
-  }
+  const connections = (connectionsRes || []).filter(c => c.isActive !== false);
+  const combos = combosRes || [];
+  const customModels = customModelsRes || [];
+  const modelAliases = modelAliasesRes || {};
+  const disabledByAlias = disabledByAliasRes || {};
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
   const activeConnectionByProvider = new Map();
@@ -414,6 +402,24 @@ export async function buildModelsList(kindFilter, options = {}) {
       });
     }
   }
+
+  // Pre-fetch live model catalogs in parallel across all active providers
+  const liveResults = new Map();
+  await Promise.all(
+    Array.from(activeConnectionByProvider.entries()).map(async ([providerId, conn]) => {
+      const enabledModels = conn?.providerSpecificData?.enabledModels;
+      const hasExplicit = Array.isArray(enabledModels) && enabledModels.length > 0;
+      const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
+      if (liveResolver && !hasExplicit) {
+        try {
+          const live = await resolveLiveWithTimeout(providerId, conn, liveResolver);
+          if (live?.models?.length) liveResults.set(providerId, live);
+        } catch (err) {
+          console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
+        }
+      }
+    })
+  );
 
   const models = [];
   const combosByName = new Map(
@@ -523,23 +529,19 @@ export async function buildModelsList(kindFilter, options = {}) {
       // whatever rawModelIds already holds.
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
       if (liveResolver && !hasExplicitEnabledModels) {
-        try {
-          const live = await resolveLiveWithTimeout(providerId, conn, liveResolver);
-          if (live?.models?.length) {
-            rawModelIds = live.models.map((m) => m.id);
-            liveModelKindById = new Map(
-              live.models
-                .filter((m) => m?.id)
-                .map((m) => [m.id, modelKind(m)])
-            );
-            liveCapabilitiesById = new Map(
-              live.models
-                .filter((m) => m?.id && m.capabilities)
-                .map((m) => [m.id, m.capabilities])
-            );
-          }
-        } catch (err) {
-          console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
+        const live = liveResults.get(providerId);
+        if (live?.models?.length) {
+          rawModelIds = live.models.map((m) => m.id);
+          liveModelKindById = new Map(
+            live.models
+              .filter((m) => m?.id)
+              .map((m) => [m.id, modelKind(m)])
+          );
+          liveCapabilitiesById = new Map(
+            live.models
+              .filter((m) => m?.id && m.capabilities)
+              .map((m) => [m.id, m.capabilities])
+          );
         }
       }
 
@@ -682,6 +684,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     dedupedModels.push(model);
   }
 
+  _modelsCache.set(cacheKey, { data: dedupedModels, expiresAt: now + MODELS_CACHE_TTL_MS });
   return dedupedModels;
 }
 
@@ -711,7 +714,10 @@ export async function GET(request) {
       await buildModelsList([LLM_KIND], { skipDynamicFetch })
     );
     return Response.json({ object: "list", data }, {
-      headers: { "Access-Control-Allow-Origin": "*" },
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=15, stale-while-revalidate=60",
+      },
     });
   } catch (error) {
     console.log("Error fetching models:", error);

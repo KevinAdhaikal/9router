@@ -115,6 +115,17 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
+function runBackgroundTask(task) {
+  try {
+    const { after } = require("next/server");
+    if (typeof after === "function") {
+      after(task);
+      return;
+    }
+  } catch {}
+  Promise.resolve().then(task).catch(() => {});
+}
+
 export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
@@ -136,13 +147,15 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0
   };
 
-  saveRequestUsage({
-    provider: provider || "unknown",
-    model: model || "unknown",
-    tokens: normalized,
-    timestamp: new Date().toISOString(),
-    connectionId: connectionId || undefined,
-    apiKey: apiKey || undefined,
-    endpoint: endpoint || null
-  }).catch(() => {});
+  runBackgroundTask(async () => {
+    await saveRequestUsage({
+      provider: provider || "unknown",
+      model: model || "unknown",
+      tokens: normalized,
+      timestamp: new Date().toISOString(),
+      connectionId: connectionId || undefined,
+      apiKey: apiKey || undefined,
+      endpoint: endpoint || null
+    }).catch(() => {});
+  });
 }

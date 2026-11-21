@@ -3,7 +3,7 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { makeKv } from "../helpers/kvStore.js";
 
 const pricingKv = makeKv("pricing");
-const CACHE_TTL_MS = 5000;
+const CACHE_TTL_MS = 60_000;
 
 let cache = { value: null, expiresAt: 0 };
 
@@ -50,8 +50,8 @@ export async function getPricing() {
 
 export async function getPricingForModel(provider, model) {
   if (!model) return null;
-  const userPricing = await getUserPricing();
-  if (provider && userPricing[provider]?.[model]) return userPricing[provider][model];
+  const pricing = await getPricing();
+  if (provider && pricing[provider]?.[model]) return pricing[provider][model];
   const { getPricingForModel: resolveConst } = await import("open-sse/providers/pricing.js");
   return resolveConst(provider, model);
 }

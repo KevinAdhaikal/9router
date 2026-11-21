@@ -240,6 +240,21 @@ export async function getActiveRequests() {
   return { activeRequests, recentRequests, errorProvider };
 }
 
+const _recentlySavedUsage = new Set();
+const RECENT_SAVED_MAX = 500;
+
+function isRecentlySaved(key) {
+  return _recentlySavedUsage.has(key);
+}
+
+function markRecentlySaved(key) {
+  if (_recentlySavedUsage.size >= RECENT_SAVED_MAX) {
+    const first = _recentlySavedUsage.values().next().value;
+    _recentlySavedUsage.delete(first);
+  }
+  _recentlySavedUsage.add(key);
+}
+
 export async function saveRequestUsage(entry) {
   try {
     const db = await getAdapter();
@@ -251,34 +266,16 @@ export async function saveRequestUsage(entry) {
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
+    const dedupeKey = `${entry.timestamp}|${entry.provider || ""}|${entry.model || ""}|${entry.connectionId || ""}|${promptTokens}|${completionTokens}`;
+    if (isRecentlySaved(dedupeKey)) {
+      return;
+    }
+    markRecentlySaved(dedupeKey);
+
     let inserted = false;
 
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
     await db.transaction(async () => {
-      const existing = await db.get(
-        `SELECT id, endpoint FROM usageHistory
-         WHERE timestamp = ?
-           AND COALESCE(provider, '') = COALESCE(?, '')
-           AND COALESCE(model, '') = COALESCE(?, '')
-           AND COALESCE(connectionId, '') = COALESCE(?, '')
-           AND COALESCE(apiKey, '') = COALESCE(?, '')
-           AND promptTokens = ?
-           AND completionTokens = ?
-         ORDER BY id DESC LIMIT 1`,
-        [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null,
-          promptTokens, completionTokens,
-        ]
-      );
-
-      if (existing) {
-        if (!existing.endpoint && entry.endpoint) {
-          await db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [entry.endpoint, existing.id]);
-        }
-        return;
-      }
-
       await db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [

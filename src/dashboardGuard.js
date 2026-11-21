@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getSettings, validateApiKey, getApiKeyByKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
@@ -156,10 +156,19 @@ async function hasValidApiKey(request) {
   return await validateApiKey(apiKey);
 }
 
+async function verifyPublicLlmApiAccess(request) {
+  if (isLocalRequest(request)) return { ok: true, isLocal: true };
+  if (await hasValidCliToken(request)) return { ok: true, hasCli: true };
+  const apiKey = extractApiKey(request);
+  if (!apiKey) return { ok: false };
+  const record = await getApiKeyByKey(apiKey);
+  if (!record || !record.isActive) return { ok: false };
+  return { ok: true, keyRecord: record };
+}
+
 async function canAccessPublicLlmApi(request) {
-  if (isLocalRequest(request)) return true;
-  if (await hasValidCliToken(request)) return true;
-  return await hasValidApiKey(request);
+  const res = await verifyPublicLlmApiAccess(request);
+  return res.ok;
 }
 
 async function canAccessLocalOnlyRoute(request) {
@@ -224,8 +233,33 @@ export async function proxy(request) {
   }
 
   if (isPublicLlmApi(pathname)) {
-    if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    const access = await verifyPublicLlmApiAccess(request);
+    if (!access.ok) {
+      return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    }
+
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete("x-9r-auth-verified");
+    requestHeaders.delete("x-9r-auth-key-id");
+    requestHeaders.delete("x-9r-auth-key-restricted");
+    requestHeaders.delete("x-9r-auth-key-allow");
+
+    if (access.keyRecord) {
+      requestHeaders.set("x-9r-auth-verified", "1");
+      requestHeaders.set("x-9r-auth-key-id", access.keyRecord.id);
+      requestHeaders.set("x-9r-auth-key-restricted", access.keyRecord.access?.restricted ? "1" : "0");
+      if (access.keyRecord.access?.allow?.length) {
+        requestHeaders.set("x-9r-auth-key-allow", JSON.stringify(access.keyRecord.access.allow));
+      }
+    } else {
+      requestHeaders.set("x-9r-auth-verified", "local");
+    }
+
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
