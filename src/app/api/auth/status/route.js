@@ -45,6 +45,10 @@ export async function GET() {
       samlName: samlName || null,
       samlEmail: samlEmail || null,
       samlLogin: !!session?.saml,
+    }, {
+      headers: {
+        "Cache-Control": "private, max-age=10, stale-while-revalidate=30",
+      },
     });
   } catch {
     return NextResponse.json({

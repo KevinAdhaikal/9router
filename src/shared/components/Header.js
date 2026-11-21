@@ -165,10 +165,14 @@ const getPageInfo = (pathname) => {
   return { title: "", description: "", breadcrumbs: [] };
 };
 
+let cachedAuthData = null;
+let cachedAuthTime = 0;
+const AUTH_CACHE_TTL_MS = 60_000;
+
 export default function Header({ onMenuClick, showMenuButton = true }) {
   const pathname = usePathname();
-  const [displayName, setDisplayName] = useState("");
-  const [loginMethod, setLoginMethod] = useState("");
+  const [displayName, setDisplayName] = useState(() => cachedAuthData?.displayName || "");
+  const [loginMethod, setLoginMethod] = useState(() => cachedAuthData?.loginMethod || "");
   const [donateOpen, setDonateOpen] = useState(false);
 
   // Memoize page info to prevent unnecessary recalculations
@@ -179,13 +183,27 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
     let cancelled = false;
 
     async function loadAuthStatus() {
+      const now = Date.now();
+      if (cachedAuthData && now - cachedAuthTime < AUTH_CACHE_TTL_MS) {
+        if (!cancelled) {
+          setDisplayName(cachedAuthData.displayName || "");
+          setLoginMethod(cachedAuthData.loginMethod || "");
+        }
+        return;
+      }
+
       try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
+        const res = await fetch("/api/auth/status");
         if (!res.ok) return;
         const data = await res.json();
+        cachedAuthData = {
+          displayName: data?.displayName || data?.samlName || data?.samlEmail || data?.oidcName || data?.oidcEmail || "",
+          loginMethod: data?.loginMethod || "",
+        };
+        cachedAuthTime = Date.now();
         if (!cancelled) {
-          setDisplayName(data?.displayName || data?.samlName || data?.samlEmail || data?.oidcName || data?.oidcEmail || "");
-          setLoginMethod(data?.loginMethod || "");
+          setDisplayName(cachedAuthData.displayName);
+          setLoginMethod(cachedAuthData.loginMethod);
         }
       } catch {
         if (!cancelled) {
@@ -202,6 +220,8 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   }, []);
 
   const handleLogout = async () => {
+    cachedAuthData = null;
+    cachedAuthTime = 0;
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {

@@ -16,7 +16,7 @@ function getStatus(status, tool) {
 export default function ToolSummaryCard({ toolId, tool, status }) {
   const s = getStatus(status, tool);
   return (
-    <Link href={`/dashboard/cli-tools/${toolId}`} className="block">
+    <Link href={`/dashboard/cli-tools/${toolId}`} prefetch={false} className="block">
       <Card padding="sm" className="h-full overflow-hidden hover:border-primary/50 transition-colors cursor-pointer">
         <div className="flex h-full flex-col gap-2">
           <div className="flex items-center gap-3">
