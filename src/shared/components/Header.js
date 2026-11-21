@@ -147,13 +147,6 @@ const getPageInfo = (pathname) => {
       icon: "translate",
       breadcrumbs: [],
     };
-  if (pathname.includes("/console-log"))
-    return {
-      title: "Console Log",
-      description: "Live server console output",
-      icon: "monitor",
-      breadcrumbs: [],
-    };
   if (pathname === "/dashboard")
     return {
       title: "Endpoint",

@@ -4,12 +4,8 @@ import "material-symbols/outlined.css";
 import "./globals.css";
 import { ThemeProvider } from "@/shared/components/ThemeProvider";
 import "@/lib/network/initOutboundProxy"; // Auto-initialize outbound proxy env
-import "@/shared/services/bootstrap"; // Auto-run initializeApp (watchdog, auto-resume tunnel)
-import { initConsoleLogCapture } from "@/lib/consoleLogBuffer";
+import "@/shared/services/bootstrap"; // Auto-run initializeApp
 import { RuntimeI18nProvider } from "@/i18n/RuntimeI18nProvider";
-
-// Hook console immediately at module load time (server-side only, runs once)
-initConsoleLogCapture();
 
 const inter = Inter({
   subsets: ["latin"],
@@ -32,9 +28,6 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Apply persisted theme before first paint so a reload does not flash the
-            default (light) theme before the client store hydrates. Mirrors the
-            zustand-persist "theme" key and the `dark` class applyTheme() sets. */}
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var s=localStorage.getItem('theme');var t=s?(JSON.parse(s).state||{}).theme:'system';t=t||'system';var m=window.matchMedia('(prefers-color-scheme: dark)').matches;if(t==='dark'||(t==='system'&&m)){document.documentElement.classList.add('dark')}}catch(e){}})();`,
