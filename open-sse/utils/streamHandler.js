@@ -192,7 +192,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, onStreamComplete = null) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -221,7 +221,14 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     signal: streamController.signal,
     startTime: streamController.startTime,
     isConnected: () => streamController.isConnected(),
-    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleComplete(); },
+    handleComplete: () => {
+      dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`);
+      clearStall();
+      streamController.handleComplete();
+      if (!transformStream && onStreamComplete) {
+        onStreamComplete({ content: "", thinking: null }, null, t0);
+      }
+    },
     handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleError(e); },
     handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleDisconnect(r); },
     abort: () => { clearStall(); streamController.abort(); }
@@ -247,12 +254,12 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
   });
 
-  const transformedBody = providerResponse.body
-    .pipeThrough(upstreamTap)
-    .pipeThrough(transformStream);
+  const streamReadable = transformStream
+    ? providerResponse.body.pipeThrough(upstreamTap).pipeThrough(transformStream)
+    : providerResponse.body.pipeThrough(upstreamTap);
 
   return createDisconnectAwareStream(
-    { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
+    { readable: streamReadable, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
     wrappedController,
     onAbortTerminal ? () => onAbortTerminal(abortMessage) : null
   );

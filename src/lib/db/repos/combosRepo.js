@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { createMemoryCache } from "../helpers/cache.js";
+
+const comboCache = createMemoryCache(60000);
 
 function rowToCombo(row) {
   if (!row) return null;
@@ -15,21 +18,35 @@ function rowToCombo(row) {
 }
 
 export async function getCombos() {
+  const cached = comboCache.get("all");
+  if (cached) return cached;
   const db = await getAdapter();
   const rows = await db.all(`SELECT * FROM combos ORDER BY createdAt ASC`);
-  return rows.map(rowToCombo);
+  const result = rows.map(rowToCombo);
+  comboCache.set("all", result);
+  return result;
 }
 
 export async function getComboById(id) {
+  if (!id) return null;
+  const cached = comboCache.get(`id:${id}`);
+  if (cached) return cached;
   const db = await getAdapter();
   const row = await db.get(`SELECT * FROM combos WHERE id = ?`, [id]);
-  return rowToCombo(row);
+  const result = rowToCombo(row);
+  if (result) comboCache.set(`id:${id}`, result);
+  return result;
 }
 
 export async function getComboByName(name) {
+  if (!name) return null;
+  const cached = comboCache.get(`name:${name}`);
+  if (cached) return cached;
   const db = await getAdapter();
   const row = await db.get(`SELECT * FROM combos WHERE name = ?`, [name]);
-  return rowToCombo(row);
+  const result = rowToCombo(row);
+  if (result) comboCache.set(`name:${name}`, result);
+  return result;
 }
 
 export async function createCombo(data) {
@@ -47,6 +64,7 @@ export async function createCombo(data) {
     `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
     [combo.id, combo.name, combo.kind, stringifyJson(combo.models), combo.createdAt, combo.updatedAt]
   );
+  comboCache.clear();
   return combo;
 }
 
@@ -63,11 +81,13 @@ export async function updateCombo(id, data) {
     );
     result = merged;
   });
+  comboCache.clear();
   return result;
 }
 
 export async function deleteCombo(id) {
   const db = await getAdapter();
   const res = await db.run(`DELETE FROM combos WHERE id = ?`, [id]);
+  comboCache.clear();
   return (res?.changes ?? 0) > 0;
 }

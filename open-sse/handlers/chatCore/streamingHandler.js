@@ -39,6 +39,11 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
+  // Direct byte passthrough when formats match and no special tool renaming is needed!
+  if (!toolNameMap?.size) {
+    return null;
+  }
+
   // The passthrough path has no format translation, so the fingerprint's tool
   // rename map (read -> read_client) has to be handed over explicitly —
   // otherwise the client receives a call to a tool it never declared (#4986).
@@ -95,7 +100,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     ? buildAbortedResponsesTerminalBytes
     : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, onStreamComplete);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,

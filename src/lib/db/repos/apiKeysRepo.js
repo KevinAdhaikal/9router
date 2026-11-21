@@ -2,6 +2,9 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { keyAccessFromColumns, keyAccessToColumns } from "@/shared/utils/keyAccess.js";
 import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
+import { createMemoryCache } from "../helpers/cache.js";
+
+const keyCache = createMemoryCache(60000);
 
 function rowToKey(row) {
   if (!row) return null;
@@ -23,17 +26,32 @@ export async function getApiKeys() {
 }
 
 export async function getApiKeyById(id) {
+  if (!id) return null;
+  const cached = keyCache.get(`id:${id}`);
+  if (cached) return cached;
   const db = await getAdapter();
   const row = await db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
-  return rowToKey(row);
+  const result = rowToKey(row);
+  if (result) {
+    keyCache.set(`id:${id}`, result);
+    keyCache.set(`key:${result.key}`, result);
+  }
+  return result;
 }
 
 // Used by the /v1 handlers to read the presented key's access settings.
 export async function getApiKeyByKey(key) {
   if (!key) return null;
+  const cached = keyCache.get(`key:${key}`);
+  if (cached) return cached;
   const db = await getAdapter();
   const row = await db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]);
-  return rowToKey(row);
+  const result = rowToKey(row);
+  if (result) {
+    keyCache.set(`key:${key}`, result);
+    keyCache.set(`id:${result.id}`, result);
+  }
+  return result;
 }
 
 export async function createApiKey(name, machineId) {
@@ -55,6 +73,7 @@ export async function createApiKey(name, machineId) {
     `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
     [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt, cols.accessRestricted, cols.accessAllow]
   );
+  keyCache.clear();
   return apiKey;
 }
 
@@ -72,18 +91,19 @@ export async function updateApiKey(id, data) {
     );
     result = rowToKey(await db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
   });
+  keyCache.clear();
   return result;
 }
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
   const res = await db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+  keyCache.clear();
   return (res?.changes ?? 0) > 0;
 }
 
 export async function validateApiKey(key) {
-  const db = await getAdapter();
-  const row = await db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
-  if (!row) return false;
-  return row.isActive === 1 || row.isActive === true;
+  if (!key) return false;
+  const keyObj = await getApiKeyByKey(key);
+  return !!keyObj?.isActive;
 }

@@ -1,5 +1,8 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { createMemoryCache } from "../helpers/cache.js";
+
+const settingsCache = createMemoryCache(30000);
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -83,8 +86,12 @@ export function mergeWithDefaults(raw) {
 }
 
 export async function getSettings() {
+  const cached = settingsCache.get("default");
+  if (cached) return cached;
   const raw = await readRaw();
-  return mergeWithDefaults(raw);
+  const merged = mergeWithDefaults(raw);
+  settingsCache.set("default", merged);
+  return merged;
 }
 
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)
@@ -100,7 +107,9 @@ export async function updateSettings(updates) {
       [stringifyJson(next)],
     );
   });
-  return mergeWithDefaults(next);
+  const merged = mergeWithDefaults(next);
+  settingsCache.set("default", merged);
+  return merged;
 }
 
 export async function isCloudEnabled() {

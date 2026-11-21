@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { createMemoryCache } from "../helpers/cache.js";
+
+const connCache = createMemoryCache(30000);
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -90,6 +93,9 @@ function deriveConnectionName(data, fallbackName) {
 }
 
 export async function getProviderConnections(filter = {}) {
+  const cacheKey = `filter:${filter.provider || "all"}:${filter.isActive}`;
+  const cached = connCache.get(cacheKey);
+  if (cached) return cached;
   const db = await getAdapter();
   const where = [];
   const params = [];
@@ -99,13 +105,19 @@ export async function getProviderConnections(filter = {}) {
   const rows = await db.all(sql, params);
   const list = rows.map(rowToConn);
   list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  connCache.set(cacheKey, list);
   return list;
 }
 
 export async function getProviderConnectionById(id) {
+  if (!id) return null;
+  const cached = connCache.get(`id:${id}`);
+  if (cached) return cached;
   const db = await getAdapter();
   const row = await db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
-  return rowToConn(row);
+  const result = rowToConn(row);
+  if (result) connCache.set(`id:${id}`, result);
+  return result;
 }
 
 // Internal sync reorder — must be called INSIDE a transaction.
@@ -257,7 +269,7 @@ export async function createProviderConnection(data) {
     // serialized every parallel writer on the same transaction. #4311
     result = conn;
   });
-
+  connCache.clear();
   return result;
 }
 
@@ -275,6 +287,7 @@ export async function updateProviderConnection(id, data) {
     if (data.priority !== undefined) await reorderInTx(db, existing.provider);
     result = merged;
   });
+  connCache.clear();
   return result;
 }
 
@@ -288,6 +301,7 @@ export async function deleteProviderConnection(id) {
     await reorderInTx(db, row.provider);
     ok = true;
   });
+  connCache.clear();
   return ok;
 }
 
