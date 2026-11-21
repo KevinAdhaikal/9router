@@ -17,9 +17,12 @@ export async function ensureOutboundProxyInitialized() {
   return initialized;
 }
 
-// Defer init so HTTP server accepts connections first
-setImmediate(() => {
-  ensureOutboundProxyInitialized().catch(console.log);
-});
+// Defer init so HTTP server accepts connections first (Node.js only)
+const isWorkers = typeof navigator !== "undefined" && (navigator.userAgent === "Cloudflare-Workers" || navigator.userAgent?.includes("Cloudflare"));
+if (!isWorkers && typeof setImmediate === "function") {
+  setImmediate(() => {
+    ensureOutboundProxyInitialized().catch(() => {});
+  });
+}
 
 export default ensureOutboundProxyInitialized;

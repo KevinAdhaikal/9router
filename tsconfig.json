@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "open-sse": ["./open-sse"],
+      "open-sse/*": ["./open-sse/*"],
+      "next/server": ["./src/lib/shims/nextServer.js"],
+      "next/headers": ["./src/lib/shims/nextHeaders.js"],
+      "next/link": ["./src/lib/shims/nextLink.jsx"],
+      "next/navigation": ["./src/lib/shims/nextNavigation.js"],
+      "next/image": ["./src/lib/shims/nextImage.jsx"]
+    },
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": false,
+    "jsx": "react-jsx"
+  }
+}

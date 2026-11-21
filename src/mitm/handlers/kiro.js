@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 
 // Debug trace log — written to data/logs/mitm/kiro-debug.log (dev only)
-const DEBUG_LOG = path.join(__dirname, "../../../data/logs/mitm/kiro-debug.log");
+const DEBUG_LOG = typeof __dirname !== "undefined" ? path.join(__dirname, "../../../data/logs/mitm/kiro-debug.log") : "";
 function dbg(msg) {
   if (!IS_DEV) return;
   try {

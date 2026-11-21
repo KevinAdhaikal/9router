@@ -53,12 +53,14 @@ let mitmIsRestarting = false;
 
 function resolveBundledServerPath() {
   if (process.env.MITM_SERVER_PATH) return process.env.MITM_SERVER_PATH;
-  const sibling = path.join(__dirname, "server.js");
-  if (fs.existsSync(sibling)) return sibling;
-  const fromCwd = path.join(process.cwd(), "src", "mitm", "server.js");
-  if (fs.existsSync(fromCwd)) return fromCwd;
-  const fromNext = path.join(process.cwd(), "..", "src", "mitm", "server.js");
-  if (fs.existsSync(fromNext)) return fromNext;
+  const dir = typeof __dirname !== "undefined" ? __dirname : "";
+  const sibling = dir ? path.join(dir, "server.js") : "";
+  if (sibling && fs.existsSync && fs.existsSync(sibling)) return sibling;
+  const cwd = typeof process !== "undefined" && process.cwd ? process.cwd() : ".";
+  const fromCwd = path.join(cwd, "src", "mitm", "server.js");
+  if (fs.existsSync && fs.existsSync(fromCwd)) return fromCwd;
+  const fromNext = path.join(cwd, "..", "src", "mitm", "server.js");
+  if (fs.existsSync && fs.existsSync(fromNext)) return fromNext;
   return fromCwd;
 }
 
@@ -93,7 +95,8 @@ function ensureRuntimeServer(bundledPath) {
   }
 }
 
-const SERVER_PATH = ensureRuntimeServer(resolveBundledServerPath());
+const isWorkers = typeof navigator !== "undefined" && (navigator.userAgent === "Cloudflare-Workers" || navigator.userAgent?.includes("Cloudflare"));
+const SERVER_PATH = !isWorkers ? ensureRuntimeServer(resolveBundledServerPath()) : "";
 const ENCRYPT_ALGO = "aes-256-gcm";
 const ENCRYPT_SALT = "9router-mitm-pwd";
 

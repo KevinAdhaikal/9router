@@ -16,17 +16,21 @@ const runtimeSessionStore = new Map();
 const continuationStore = new Map();
 
 // Periodically evict entries that haven't been used within TTL
-const cleanupInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of runtimeSessionStore) {
-        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
-            runtimeSessionStore.delete(key);
-        }
-    }
-}, MEMORY_CONFIG.sessionCleanupIntervalMs);
-
-// Allow Node.js to exit even if interval is still active
-if (cleanupInterval.unref) cleanupInterval.unref();
+const isWorkers = typeof navigator !== "undefined" && (navigator.userAgent === "Cloudflare-Workers" || navigator.userAgent?.includes("Cloudflare"));
+let cleanupInterval = null;
+if (!isWorkers) {
+    try {
+        cleanupInterval = setInterval(() => {
+            const now = Date.now();
+            for (const [key, entry] of runtimeSessionStore) {
+                if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+                    runtimeSessionStore.delete(key);
+                }
+            }
+        }, MEMORY_CONFIG.sessionCleanupIntervalMs);
+        if (cleanupInterval?.unref) cleanupInterval.unref();
+    } catch (_) {}
+}
 
 /**
  * Get or create a session ID for the given connection.
@@ -259,13 +263,18 @@ export function toNumericSessionId(sessionId) {
 }
 
 // Cleanup expired assistant-session entries
-const assistantCleanup = setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of assistantSessionStore) {
-        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) assistantSessionStore.delete(key);
-    }
-    for (const [key, entry] of continuationStore) {
-        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) continuationStore.delete(key);
-    }
-}, MEMORY_CONFIG.sessionCleanupIntervalMs);
-if (assistantCleanup.unref) assistantCleanup.unref();
+let assistantCleanup = null;
+if (!isWorkers) {
+    try {
+        assistantCleanup = setInterval(() => {
+            const now = Date.now();
+            for (const [key, entry] of assistantSessionStore) {
+                if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) assistantSessionStore.delete(key);
+            }
+            for (const [key, entry] of continuationStore) {
+                if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) continuationStore.delete(key);
+            }
+        }, MEMORY_CONFIG.sessionCleanupIntervalMs);
+        if (assistantCleanup?.unref) assistantCleanup.unref();
+    } catch (_) {}
+}

@@ -115,15 +115,21 @@ export function generateSessionId(timestamp = Date.now()) {
 // conversation so a conversation keeps one stable, valid session.
 const translatedOpencodeSessions = new Map();
 const MAX_TRANSLATED_SESSIONS = 5000;
-const translatedSessionCleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of translatedOpencodeSessions) {
-    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
-      translatedOpencodeSessions.delete(key);
-    }
-  }
-}, MEMORY_CONFIG.sessionCleanupIntervalMs);
-if (translatedSessionCleanup.unref) translatedSessionCleanup.unref();
+const isWorkers = typeof navigator !== "undefined" && (navigator.userAgent === "Cloudflare-Workers" || navigator.userAgent?.includes("Cloudflare"));
+let translatedSessionCleanup = null;
+if (!isWorkers) {
+  try {
+    translatedSessionCleanup = setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of translatedOpencodeSessions) {
+        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+          translatedOpencodeSessions.delete(key);
+        }
+      }
+    }, MEMORY_CONFIG.sessionCleanupIntervalMs);
+    if (translatedSessionCleanup?.unref) translatedSessionCleanup.unref();
+  } catch (_) {}
+}
 
 export function translateSessionId(sessionId, clientTool = "") {
   if (typeof sessionId === "string" && OPENCODE_SESSION_RE.test(sessionId.trim())) {
@@ -169,15 +175,20 @@ function nativeSession(headers) {
 // after MEMORY_CONFIG.sessionTtlMs like the other session stores.
 const stableOpencodeSessions = new Map();
 const MAX_STABLE_SESSIONS = 1000;
-const stableSessionCleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of stableOpencodeSessions) {
-    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
-      stableOpencodeSessions.delete(key);
-    }
-  }
-}, MEMORY_CONFIG.sessionCleanupIntervalMs);
-if (stableSessionCleanup.unref) stableSessionCleanup.unref();
+let stableSessionCleanup = null;
+if (!isWorkers) {
+  try {
+    stableSessionCleanup = setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of stableOpencodeSessions) {
+        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+          stableOpencodeSessions.delete(key);
+        }
+      }
+    }, MEMORY_CONFIG.sessionCleanupIntervalMs);
+    if (stableSessionCleanup?.unref) stableSessionCleanup.unref();
+  } catch (_) {}
+}
 
 function identityKey(credentials) {
   const connectionId = credentials?.connectionId || credentials?.id;

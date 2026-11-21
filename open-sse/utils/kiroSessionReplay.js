@@ -135,10 +135,16 @@ export function clearKiroSessionReplayStore() {
   sessionStartStore.clear();
 }
 
-const cleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of sessionStartStore) {
-    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) sessionStartStore.delete(key);
-  }
-}, MEMORY_CONFIG.sessionCleanupIntervalMs);
-if (cleanup.unref) cleanup.unref();
+const isWorkers = typeof navigator !== "undefined" && (navigator.userAgent === "Cloudflare-Workers" || navigator.userAgent?.includes("Cloudflare"));
+let cleanup = null;
+if (!isWorkers) {
+  try {
+    cleanup = setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of sessionStartStore) {
+        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) sessionStartStore.delete(key);
+      }
+    }, MEMORY_CONFIG.sessionCleanupIntervalMs);
+    if (cleanup?.unref) cleanup.unref();
+  } catch (_) {}
+}

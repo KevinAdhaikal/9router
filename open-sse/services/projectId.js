@@ -53,14 +53,18 @@ export function cleanupNow() {
 
 /** Start the periodic background cleanup (idempotent). Called automatically on module load. */
 export function startCacheCleanup() {
+    const isWorkers = typeof navigator !== "undefined" && (navigator.userAgent === "Cloudflare-Workers" || navigator.userAgent?.includes("Cloudflare"));
+    if (isWorkers) return;
     if (_cleanupTimer) return;
-    _cleanupTimer = setInterval(() => {
-        try { cleanupNow(); } catch (e) {
-            console.warn("[ProjectId] cleanup sweep error:", e?.message ?? e);
-        }
-    }, CLEANUP_INTERVAL_MS);
-    // Unref so the timer doesn't prevent Node from exiting when it is otherwise idle
-    _cleanupTimer?.unref?.();
+    try {
+        _cleanupTimer = setInterval(() => {
+            try { cleanupNow(); } catch (e) {
+                console.warn("[ProjectId] cleanup sweep error:", e?.message ?? e);
+            }
+        }, CLEANUP_INTERVAL_MS);
+        // Unref so the timer doesn't prevent Node from exiting when it is otherwise idle
+        _cleanupTimer?.unref?.();
+    } catch (_) {}
 }
 
 /** Stop the periodic background cleanup (e.g. during graceful shutdown). */
