@@ -121,8 +121,10 @@ async function initAdapter() {
     state.logged = true;
   }
 
-  const { runMigrationOnce } = await import("./migrate.js");
-  await runMigrationOnce(adapter);
+  if (adapter.driver !== "cloudflare-d1") {
+    const { runMigrationOnce } = await import("./migrate.js");
+    await runMigrationOnce(adapter);
+  }
   return adapter;
 }
 

@@ -8,10 +8,13 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:pages": "wrangler pages dev dist --config wrangler.pages.jsonc",
     "build": "vite build",
     "build:client": "vite build",
     "build:worker": "vite build && wrangler deploy --dry-run",
-    "deploy:worker": "vite build && wrangler deploy"
+    "build:pages": "node scripts/build-pages.mjs",
+    "deploy:worker": "vite build && wrangler deploy",
+    "deploy:pages": "npm run build:pages && wrangler pages deploy dist --config wrangler.pages.jsonc --no-bundle"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -736,6 +736,67 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
   });
 }
 
+// Fast byte-level check for non-null finish_reason (e.g. "finish_reason":"stop" or "finish_reason": "stop")
+// ASCII: "finish_reason" = 102, 105, 110, 105, 115, 104, 95, 114, 101, 97, 115, 111, 110, 34
+function hasNonNullFinishBytes(u8) {
+  const len = u8.length;
+  if (len < 16) return false;
+  for (let i = 0; i <= len - 15; i++) {
+    if (
+      u8[i] === 102 && // f
+      u8[i+1] === 105 && // i
+      u8[i+2] === 110 && // n
+      u8[i+3] === 105 && // i
+      u8[i+4] === 115 && // s
+      u8[i+5] === 104 && // h
+      u8[i+6] === 95 &&  // _
+      u8[i+7] === 114 && // r
+      u8[i+8] === 101 && // e
+      u8[i+9] === 97 &&  // a
+      u8[i+10] === 115 && // s
+      u8[i+11] === 111 && // o
+      u8[i+12] === 110 && // n
+      u8[i+13] === 34     // "
+    ) {
+      let j = i + 14;
+      while (j < len && (u8[j] === 32 || u8[j] === 9 || u8[j] === 58)) { // ' ', '\t', ':'
+        j++;
+      }
+      if (j < len && u8[j] === 34) { // '"' -> non-null string value
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Fast byte-level check for [DONE]
+function hasDoneBytes(u8) {
+  const len = u8.length;
+  if (len < 6) return false;
+  for (let i = 0; i <= len - 6; i++) {
+    if (
+      u8[i] === 91 &&   // [
+      u8[i+1] === 68 &&  // D
+      u8[i+2] === 79 &&  // O
+      u8[i+3] === 78 &&  // N
+      u8[i+4] === 69 &&  // E
+      u8[i+5] === 93     // ]
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Find last \n\n (bytes 10, 10) in byte array. Returns index right after second \n.
+function findLastDoubleNewline(u8) {
+  for (let i = u8.length - 1; i >= 1; i--) {
+    if (u8[i] === 10 && u8[i - 1] === 10) return i + 1;
+  }
+  return -1;
+}
+
 /**
  * Ultra-light zero-allocation Finish Reason Guard for OpenAI streaming chunks.
  * Enforces strict OpenAI streaming specification:
@@ -743,21 +804,19 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
  * 2. Any trailing content/reasoning tokens received after finish_reason has been emitted are dropped.
  * 3. Minimal CPU footprint for Cloudflare Workers Free Tier:
  *    - In-flight content tokens pass through directly as raw Uint8Array chunks (zero decode/split/encode overhead).
- *    - Only activates line parsing when non-null finish_reason, [DONE], or post-finish chunks arrive.
+ *    - Uses rolling byte-level scan for finish_reason/DONE; only activates line parsing when terminal chunks arrive.
  */
 export function createOpenAIFinishGuardStream(onStreamComplete = null) {
   const encoder = sharedEncoder;
   const decoder = new TextDecoder("utf-8", { fatal: false });
-  let buffer = "";
+  let pendingBytes = null;
   let seenFinish = false;
+  let emittedFinish = false;
   let doneSent = false;
+  let terminalBuffer = "";
   const t0 = Date.now();
 
-  // Matches a non-null string finish_reason (e.g. "finish_reason":"stop" or "finish_reason": "stop").
-  // finish_reason: null does not have quotes after the colon.
-  const nonNullFinishRegex = /"finish_reason"\s*:\s*"/;
-
-  function processLine(line, controller) {
+  function processTerminalLine(line, controller) {
     const trimmed = line.trim();
     if (!trimmed) {
       return;
@@ -773,7 +832,7 @@ export function createOpenAIFinishGuardStream(onStreamComplete = null) {
       }
 
       // If finish_reason was already emitted:
-      if (seenFinish) {
+      if (emittedFinish) {
         // Check if this chunk is a usage-only chunk
         if (dataContent.includes('"usage"') && !dataContent.includes('"content"') && !dataContent.includes('"reasoning_content"') && !dataContent.includes('"tool_calls"')) {
           try {
@@ -836,7 +895,7 @@ export function createOpenAIFinishGuardStream(onStreamComplete = null) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`));
             }
 
-            seenFinish = true;
+            emittedFinish = true;
             return;
           }
         } catch {
@@ -853,34 +912,64 @@ export function createOpenAIFinishGuardStream(onStreamComplete = null) {
 
   return new TransformStream({
     transform(chunk, controller) {
-      // FAST ZERO-ALLOCATION PASS:
-      // While we haven't seen finish_reason and buffer is empty:
-      if (!seenFinish && buffer === "") {
-        const text = decoder.decode(chunk, { stream: true });
-        // Complete SSE event, no [DONE], and no non-null finish_reason
-        if (text.endsWith("\n") && !text.includes("[DONE]") && (!text.includes('"finish_reason"') || !nonNullFinishRegex.test(text))) {
-          controller.enqueue(chunk);
-          return;
+      if (seenFinish) {
+        terminalBuffer += decoder.decode(chunk, { stream: true });
+        const lines = terminalBuffer.split("\n");
+        terminalBuffer = lines.pop() || "";
+        for (const line of lines) {
+          processTerminalLine(line, controller);
         }
-        buffer = text;
-      } else {
-        buffer += decoder.decode(chunk, { stream: true });
+        return;
       }
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      let combined = chunk;
+      if (pendingBytes && pendingBytes.length > 0) {
+        combined = new Uint8Array(pendingBytes.length + chunk.length);
+        combined.set(pendingBytes, 0);
+        combined.set(chunk, pendingBytes.length);
+        pendingBytes = null;
+      }
 
-      for (const line of lines) {
-        processLine(line, controller);
+      // Terminal check: if combined bytes contain finish_reason or [DONE], enter terminal processing
+      if (hasNonNullFinishBytes(combined) || hasDoneBytes(combined)) {
+        seenFinish = true;
+        terminalBuffer = decoder.decode(combined, { stream: true });
+        const lines = terminalBuffer.split("\n");
+        terminalBuffer = lines.pop() || "";
+        for (const line of lines) {
+          processTerminalLine(line, controller);
+        }
+        return;
+      }
+
+      // ULTRA-FAST ZERO-ALLOCATION PASS:
+      // While no terminal finish_reason has arrived, forward complete SSE messages as raw Uint8Array.
+      // Retain any trailing incomplete bytes in pendingBytes for the next chunk.
+      const splitIdx = findLastDoubleNewline(combined);
+      if (splitIdx > 0) {
+        controller.enqueue(combined.subarray(0, splitIdx));
+        if (splitIdx < combined.length) {
+          pendingBytes = combined.subarray(splitIdx);
+        }
+      } else {
+        pendingBytes = combined;
       }
     },
 
     flush(controller) {
-      if (buffer.trim()) {
-        processLine(buffer, controller);
+      if (pendingBytes && pendingBytes.length > 0) {
+        terminalBuffer += decoder.decode(pendingBytes);
+        pendingBytes = null;
+      }
+      if (terminalBuffer.trim()) {
+        const lines = terminalBuffer.split("\n");
+        for (const line of lines) {
+          processTerminalLine(line, controller);
+        }
       }
       if (!doneSent) {
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        doneSent = true;
       }
       if (onStreamComplete) {
         try {

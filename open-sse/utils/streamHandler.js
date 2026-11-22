@@ -193,7 +193,9 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {object} streamController - Stream controller from createStreamController
  */
 export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, onStreamComplete = null) {
-  const isWorkers = typeof process !== "undefined" && (process.env.CLOUDFLARE_WORKERS === "1" || typeof WebSocketPair !== "undefined");
+  const isWorkers = (typeof navigator !== "undefined" && (navigator.userAgent === "Cloudflare-Workers" || navigator.userAgent?.includes("Cloudflare"))) ||
+    (typeof process !== "undefined" && (process.env?.CLOUDFLARE_WORKERS === "1" || typeof WebSocketPair !== "undefined")) ||
+    typeof WebSocketPair !== "undefined";
   // Direct C++ zero-CPU streaming in Cloudflare Workers when no format translation is required
   if (!transformStream && isWorkers && providerResponse?.body) {
     return providerResponse.body;

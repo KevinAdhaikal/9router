@@ -336,6 +336,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log,
       proxyOptions,
       providerOverrides,
+      rawBodyText: clientRawRequest?.rawBodyText || null,
+      originalModel: clientRawRequest?.originalModel || null,
+      originalMessages: clientRawRequest?.originalMessages || null,
     });
     providerResponse = result.response;
     providerUrl = result.url;
@@ -405,6 +408,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
             log,
             proxyOptions,
             providerOverrides,
+            rawBodyText: clientRawRequest?.rawBodyText || null,
+            originalModel: clientRawRequest?.originalModel || null,
+            originalMessages: clientRawRequest?.originalMessages || null,
           });
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;

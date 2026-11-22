@@ -33,8 +33,10 @@ import { resolveSmartChoice } from "../services/systemoneRouter.js";
  */
 export async function handleChat(request, clientRawRequest = null) {
   let body;
+  let rawBodyText = null;
   try {
-    body = await request.json();
+    rawBodyText = await request.text();
+    body = JSON.parse(rawBodyText);
   } catch {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
@@ -46,8 +48,15 @@ export async function handleChat(request, clientRawRequest = null) {
     clientRawRequest = {
       endpoint: url.pathname,
       body,
-      headers: Object.fromEntries(request.headers.entries())
+      headers: Object.fromEntries(request.headers.entries()),
+      rawBodyText,
+      originalModel: body.model,
+      originalMessages: body.messages
     };
+  } else if (!clientRawRequest.rawBodyText && rawBodyText) {
+    clientRawRequest.rawBodyText = rawBodyText;
+    clientRawRequest.originalModel = body.model;
+    clientRawRequest.originalMessages = body.messages;
   }
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.

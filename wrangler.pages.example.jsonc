@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "9router-pages",
+  "compatibility_date": "2026-11-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "pages_build_output_dir": "./dist",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "9router-db",
+      "database_id": "YOUR_D1_DATABASE_ID_HERE"
+    }
+  ],
+  "vars": {
+    "CLOUDFLARE_WORKERS": "1",
+    "INITIAL_PASSWORD": "admin123456",
+    "JWT_SECRET": "your-32-char-min-jwt-secret-string",
+    "CRON_SECRET": "your-cron-refresh-token-secret"
+  }
+}

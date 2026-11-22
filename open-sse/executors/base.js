@@ -6,6 +6,26 @@ import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 
 /**
+ * Fast model replacement in raw JSON string when messages and other fields were not mutated.
+ * Saves 1-3ms CPU time by avoiding full object re-serialization on large multi-turn payloads.
+ */
+function replaceJsonModel(rawJson, rawModel, targetModel) {
+  if (!rawJson || typeof rawModel !== "string" || typeof targetModel !== "string") return null;
+  const targetPattern = `"model":${JSON.stringify(targetModel)}`;
+  const searchStr = `"model":${JSON.stringify(rawModel)}`;
+  const idx = rawJson.indexOf(searchStr);
+  if (idx !== -1) {
+    return rawJson.slice(0, idx) + targetPattern + rawJson.slice(idx + searchStr.length);
+  }
+  const searchStrSpaced = `"model": ${JSON.stringify(rawModel)}`;
+  const idxSpaced = rawJson.indexOf(searchStrSpaced);
+  if (idxSpaced !== -1) {
+    return rawJson.slice(0, idxSpaced) + targetPattern + rawJson.slice(idxSpaced + searchStrSpaced.length);
+  }
+  return null;
+}
+
+/**
  * BaseExecutor - Base class for provider executors
  */
 export class BaseExecutor {
@@ -97,7 +117,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null, directFetch = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null, directFetch = null, rawBodyText = null, originalModel = null, originalMessages = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -141,7 +161,25 @@ export class BaseExecutor {
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       try {
-        const bodyStr = JSON.stringify(transformedBody);
+        let bodyStr;
+        if (typeof transformedBody === "string") {
+          bodyStr = transformedBody;
+        } else if (
+          rawBodyText &&
+          originalModel &&
+          (transformedBody?.messages === originalMessages ||
+           (Array.isArray(transformedBody?.messages) && Array.isArray(originalMessages) && transformedBody.messages.length === originalMessages.length)) &&
+          typeof transformedBody?.model === "string"
+        ) {
+          if (transformedBody.model === originalModel) {
+            bodyStr = rawBodyText;
+          } else {
+            const fastReplaced = replaceJsonModel(rawBodyText, originalModel, transformedBody.model);
+            bodyStr = fastReplaced !== null ? fastReplaced : JSON.stringify(transformedBody);
+          }
+        } else {
+          bodyStr = JSON.stringify(transformedBody);
+        }
         const fetchT0 = Date.now();
         dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
         const effectiveProxyOptions = forceFreshSocketByUrl[urlIndex]

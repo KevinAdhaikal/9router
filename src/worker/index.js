@@ -544,7 +544,18 @@ app.post("/api/v1beta/models/:path{.*}", adapt(v1betaModelsPathRoute.POST));
 // 8. Static Assets SPA Fallback
 app.all("*", async (c) => {
   if (c.env?.ASSETS) {
-    return c.env.ASSETS.fetch(c.req.raw);
+    const res = await c.env.ASSETS.fetch(c.req.raw);
+    if (res.status === 404) {
+      const path = c.req.path;
+      if (path.startsWith("/api/") || path.startsWith("/v1/") || path.startsWith("/v1beta/")) {
+        return c.json({ error: "Not found", message: `Route ${path} not found` }, 404);
+      }
+      const accept = c.req.header("accept") || "";
+      if (accept.includes("text/html") || !path.includes(".")) {
+        return c.env.ASSETS.fetch(new Request(new URL("/", c.req.url), c.req.raw));
+      }
+    }
+    return res;
   }
   return c.text("9Router Worker Active", 200);
 });
