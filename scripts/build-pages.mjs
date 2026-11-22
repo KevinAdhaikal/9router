@@ -14,7 +14,7 @@ execSync("npx vite build", { cwd: rootDir, stdio: "inherit" });
 console.log("==> 2. Bundling Worker for Cloudflare Pages Advanced Mode...");
 fs.mkdirSync(tmpDir, { recursive: true });
 
-execSync(`npx wrangler deploy --dry-run --outdir "${tmpDir}"`, {
+execSync(`npx wrangler deploy --config wrangler.worker.jsonc --dry-run --outdir "${tmpDir}"`, {
   cwd: rootDir,
   stdio: "inherit",
 });

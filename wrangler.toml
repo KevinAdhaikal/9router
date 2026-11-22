@@ -1,0 +1,15 @@
+name = "9router"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-11-18"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "9router-db"
+database_id = "e76b5878-583d-461a-adaf-52b85b51a93f"
+
+[vars]
+CLOUDFLARE_WORKERS = "1"
+INITIAL_PASSWORD = "admin123456"
+JWT_SECRET = "9router-cfworker-jwt-secret-key-32chars"
+CRON_SECRET = "9router-cron-refresh-token-secret"

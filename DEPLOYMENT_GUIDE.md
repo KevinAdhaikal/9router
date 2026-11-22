@@ -320,7 +320,7 @@ npm run dev:pages
 
 Jika repositori GitHub Anda dihubungkan ke Cloudflare Pages:
 1. Buka Cloudflare Dashboard ➔ **Workers & Pages** ➔ **Create application** ➔ Tab **Pages** ➔ **Connect to Git**.
-2. Pilih repository GitHub 9Router Anda.
+2. Pilih repository GitHub 9Router Anda (branch: `feat/cloudflare-pages`).
 3. Pada halaman **Build Settings**:
    - **Framework preset:** `None` (atau `Vite`)
    - **Build command:** `npm run build:pages`
@@ -331,11 +331,12 @@ Jika repositori GitHub Anda dihubungkan ke Cloudflare Pages:
    - `JWT_SECRET` = `9router-cfworker-jwt-secret-key-32chars`
    - `CRON_SECRET` = `9router-cron-refresh-token-secret`
 5. Klik **Save and Deploy**.
-6. **Hubungkan Database D1 (Penting):**
-   - Setelah project Pages terbuat, masuk ke project Pages tersebut ➔ **Settings** ➔ **Functions**.
-   - Scroll ke bagian **D1 database bindings** ➔ klik **Add binding**.
-   - Variable name: `DB`
-   - D1 database: pilih database `9router-db`.
-   - Simpan dan trigger redeploy.
+6. **Pengaturan Wajib di Dashboard (Compatibility Flag & D1 Binding):**
+   - Setelah project Pages terbuat, masuk ke project Pages tersebut ➔ **Settings** ➔ **Functions**:
+     - **Compatibility Flags:** Scroll ke bagian **Compatibility Flags**, pastikan `nodejs_compat` aktif untuk Production dan Preview.
+     - **D1 Database Bindings:** Scroll ke bagian **D1 database bindings** ➔ klik **Add binding**:
+       - Variable name: `DB`
+       - D1 database: pilih database `9router-db`.
+   - Simpan dan trigger **Retry deployment**.
 
 
