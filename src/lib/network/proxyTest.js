@@ -1,5 +1,3 @@
-import { ProxyAgent, fetch as undiciFetch } from "undici";
-
 const DEFAULT_TEST_URL = "https://google.com/";
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -39,16 +37,22 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
       : DEFAULT_TIMEOUT_MS;
 
   let dispatcher;
+  let doFetch = globalThis.fetch;
 
   try {
-    try {
-      dispatcher = new ProxyAgent({ uri: normalizedProxyUrl });
-    } catch (err) {
-      return {
-        ok: false,
-        status: 400,
-        error: `Invalid proxy URL: ${err?.message || String(err)}`,
-      };
+    const isCloudflare = typeof WebSocketPair !== "undefined" || (typeof process !== "undefined" && process.env?.CLOUDFLARE_WORKERS === "1");
+    if (!isCloudflare) {
+      try {
+        const { ProxyAgent, fetch: uFetch } = await import("undici");
+        dispatcher = new ProxyAgent({ uri: normalizedProxyUrl });
+        if (uFetch) doFetch = uFetch;
+      } catch (err) {
+        return {
+          ok: false,
+          status: 400,
+          error: `Invalid proxy URL or undici unavailable: ${err?.message || String(err)}`,
+        };
+      }
     }
 
     const controller = new AbortController();
@@ -56,9 +60,9 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
     const timer = setTimeout(() => controller.abort(), normalizedTimeoutMs);
 
     try {
-      const res = await undiciFetch(normalizedTestUrl, {
+      const res = await doFetch(normalizedTestUrl, {
         method: "HEAD",
-        dispatcher,
+        ...(dispatcher ? { dispatcher } : {}),
         signal: controller.signal,
         headers: {
           "User-Agent": "9Router",

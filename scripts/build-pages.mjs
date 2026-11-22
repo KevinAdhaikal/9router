@@ -34,8 +34,23 @@ if (fs.existsSync(bundledMapPath)) {
 }
 console.log(`==> Copied worker bundle to ${targetWorkerPath}`);
 
-// Sanitize unsupported node:sqlite imports for Cloudflare Pages bundler compatibility
+// Polyfill process.versions.node and sanitize unsupported node:sqlite imports
 let workerCode = fs.readFileSync(targetWorkerPath, "utf8");
+
+const polyfillHeader = `// Runtime polyfill for Cloudflare Pages/Workers
+if (typeof globalThis.process === "undefined") {
+  globalThis.process = { env: {}, versions: { node: "22.0.0" } };
+} else {
+  globalThis.process.env = globalThis.process.env || {};
+  globalThis.process.versions = globalThis.process.versions || {};
+  if (!globalThis.process.versions.node) {
+    globalThis.process.versions.node = "22.0.0";
+  }
+}
+`;
+
+workerCode = polyfillHeader + workerCode;
+
 workerCode = workerCode.replace(
   /import\s+([A-Za-z0-9_$]+)\s+from\s+["']node:sqlite["'];?/g,
   "var $1 = {};"
@@ -45,7 +60,7 @@ workerCode = workerCode.replace(
   "Promise.resolve({})"
 );
 fs.writeFileSync(targetWorkerPath, workerCode, "utf8");
-console.log("==> Sanitized node:sqlite imports for Pages bundler compatibility");
+console.log("==> Injected process polyfill & sanitized node:sqlite for Pages compatibility");
 
 const assetsIgnoreDist = path.join(distDir, ".assetsignore");
 const routesJsonDist = path.join(distDir, "_routes.json");

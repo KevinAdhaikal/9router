@@ -1,3 +1,14 @@
+// Polyfill process.versions.node for Cloudflare Workers/Pages runtime compatibility
+if (typeof globalThis.process === "undefined") {
+  globalThis.process = { env: {}, versions: { node: "22.0.0" } };
+} else {
+  globalThis.process.env = globalThis.process.env || {};
+  globalThis.process.versions = globalThis.process.versions || {};
+  if (!globalThis.process.versions.node) {
+    globalThis.process.versions.node = "22.0.0";
+  }
+}
+
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
