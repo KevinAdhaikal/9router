@@ -42,6 +42,8 @@ export default defineConfig({
       "next/image": path.resolve(__dirname, "./src/lib/shims/nextImage.jsx"),
       "os": path.resolve(__dirname, "./src/lib/shims/os.js"),
       "node:os": path.resolve(__dirname, "./src/lib/shims/os.js"),
+      "node:sqlite": path.resolve(__dirname, "./src/lib/shims/sqlite.js"),
+      "sqlite": path.resolve(__dirname, "./src/lib/shims/sqlite.js"),
     },
   },
   build: {

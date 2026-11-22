@@ -82,7 +82,10 @@ async function readDesktopAccountCookies() {
     return null; // locked by a running Desktop
   }
   try {
-    const { DatabaseSync } = await import("node:sqlite");
+    const sqliteModule = "node:sqlite";
+    const sqlite = await import(sqliteModule).catch(() => null);
+    if (!sqlite?.DatabaseSync) return null;
+    const { DatabaseSync } = sqlite;
     const db = new DatabaseSync(tmp, { readOnly: true });
     const rows = db.prepare("SELECT name, value FROM cookies WHERE host_key = ?").all("." + ACCOUNT_HOST);
     db.close();

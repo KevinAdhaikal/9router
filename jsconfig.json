@@ -11,7 +11,9 @@
       "next/navigation": ["./src/lib/shims/nextNavigation.js"],
       "next/image": ["./src/lib/shims/nextImage.jsx"],
       "os": ["./src/lib/shims/os.js"],
-      "node:os": ["./src/lib/shims/os.js"]
+      "node:os": ["./src/lib/shims/os.js"],
+      "node:sqlite": ["./src/lib/shims/sqlite.js"],
+      "sqlite": ["./src/lib/shims/sqlite.js"]
     },
     "module": "ESNext",
     "moduleResolution": "bundler"

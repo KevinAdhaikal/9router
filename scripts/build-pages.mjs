@@ -34,6 +34,19 @@ if (fs.existsSync(bundledMapPath)) {
 }
 console.log(`==> Copied worker bundle to ${targetWorkerPath}`);
 
+// Sanitize unsupported node:sqlite imports for Cloudflare Pages bundler compatibility
+let workerCode = fs.readFileSync(targetWorkerPath, "utf8");
+workerCode = workerCode.replace(
+  /import\s+([A-Za-z0-9_$]+)\s+from\s+["']node:sqlite["'];?/g,
+  "var $1 = {};"
+);
+workerCode = workerCode.replace(
+  /import\(["']node:sqlite["']\)/g,
+  "Promise.resolve({})"
+);
+fs.writeFileSync(targetWorkerPath, workerCode, "utf8");
+console.log("==> Sanitized node:sqlite imports for Pages bundler compatibility");
+
 const assetsIgnoreDist = path.join(distDir, ".assetsignore");
 const routesJsonDist = path.join(distDir, "_routes.json");
 
