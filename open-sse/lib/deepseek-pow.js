@@ -20,7 +20,7 @@ function createAbortError() {
   return error;
 }
 
-function validateChallenge(algorithm, challenge, salt, difficulty, expireAt) {
+function validateChallenge(algorithm, challenge, salt, difficulty, expireAt, options = {}) {
   if (algorithm !== DEEPSEEK_POW_ALGORITHM) {
     throw new Error(`Unsupported DeepSeek PoW algorithm: ${algorithm}`);
   }
@@ -38,9 +38,15 @@ function validateChallenge(algorithm, challenge, salt, difficulty, expireAt) {
   }
 
   return {
+    algorithm,
     challenge: challenge.toLowerCase(),
-    prefix: `${salt}_${expireAt}_`,
+    salt,
     difficulty,
+    expireAt,
+    expire_at: expireAt,
+    signature: options.signature || null,
+    target_path: options.target_path || null,
+    prefix: `${salt}_${expireAt}_`,
   };
 }
 
@@ -81,10 +87,10 @@ async function solveRemotely(validated, solverUrl, options = {}) {
   const payload = {
     algorithm: validated.algorithm || DEEPSEEK_POW_ALGORITHM,
     challenge: validated.challenge,
-    prefix: validated.prefix,
-    difficulty: validated.difficulty,
-    expireAt: validated.expireAt,
     salt: validated.salt,
+    signature: validated.signature || options.signature || undefined,
+    difficulty: validated.difficulty,
+    expire_at: validated.expire_at ?? validated.expireAt,
   };
 
   const headers = {
@@ -192,7 +198,7 @@ export async function solveDeepSeekPowAsync(
   expireAt,
   options = {}
 ) {
-  const validated = validateChallenge(algorithm, challenge, salt, difficulty, expireAt);
+  const validated = validateChallenge(algorithm, challenge, salt, difficulty, expireAt, options);
 
   // 1. Remote solver if URL provided (via options or process.env.DEEPSEEK_POW_URL)
   const solverUrl = options.powSolverUrl || (typeof process !== "undefined" && process.env?.DEEPSEEK_POW_URL) || null;

@@ -132,6 +132,8 @@ async function solvePow(challenge, signal, options = {}) {
     challenge.expire_at,
     {
       signal,
+      signature: challenge.signature,
+      target_path: challenge.target_path,
       powSolverUrl: options.powSolverUrl,
       powSolverKey: options.powSolverKey,
       log: options.log,
