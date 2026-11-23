@@ -21,6 +21,7 @@ import MediaProvidersKindDetailPage from "@/app/(dashboard)/dashboard/media-prov
 import MediaComboDetailPage from "@/app/(dashboard)/dashboard/media-providers/combo/[id]/page";
 import MitmPage from "@/app/(dashboard)/dashboard/mitm/page";
 import BasicChatPage from "@/app/(dashboard)/dashboard/basic-chat/page";
+import QuotaPage from "@/app/(dashboard)/dashboard/quota/page";
 
 function DashboardWrapper({ children }) {
   return <DashboardLayout>{children}</DashboardLayout>;
@@ -65,6 +66,12 @@ export default function App() {
       <Route path="/dashboard/combos">
         <DashboardWrapper>
           <CombosPage />
+        </DashboardWrapper>
+      </Route>
+
+      <Route path="/dashboard/quota">
+        <DashboardWrapper>
+          <QuotaPage />
         </DashboardWrapper>
       </Route>
 

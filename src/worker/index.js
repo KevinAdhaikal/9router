@@ -186,6 +186,18 @@ import * as v1SearchRoute from "@/app/api/v1/search/route.js";
 import * as v1betaModelsRoute from "@/app/api/v1beta/models/route.js";
 import * as v1betaModelsPathRoute from "@/app/api/v1beta/models/[...path]/route.js";
 
+// Usage Routes
+import * as usageConnectionIdRoute from "@/app/api/usage/[connectionId]/route.js";
+import * as usageClaudeResetRoute from "@/app/api/usage/[connectionId]/claude-reset/route.js";
+import * as usageCodexResetCreditsRoute from "@/app/api/usage/[connectionId]/codex-reset-credits/route.js";
+import * as usageProvidersRoute from "@/app/api/usage/providers/route.js";
+import * as usageStatsRoute from "@/app/api/usage/stats/route.js";
+import * as usageHistoryRoute from "@/app/api/usage/history/route.js";
+import * as usageChartRoute from "@/app/api/usage/chart/route.js";
+import * as usageLogsRoute from "@/app/api/usage/logs/route.js";
+import * as usageRequestLogsRoute from "@/app/api/usage/request-logs/route.js";
+import * as usageRequestDetailsRoute from "@/app/api/usage/request-details/route.js";
+
 const app = new Hono();
 
 // Route adapter with parameter parsing
@@ -518,6 +530,19 @@ app.post("/api/oauth/xiaomi-mimo/login/start", adapt(oauthXiaomiLoginStartRoute.
 app.get("/api/oauth/xiaomi-mimo/login/status", adapt(oauthXiaomiLoginStatusRoute.GET));
 app.get("/api/oauth/zed/auto-import", adapt(oauthZedAutoRoute.GET));
 app.post("/api/oauth/zed/import", adapt(oauthZedImportRoute.POST));
+
+// Usage
+app.get("/api/usage/providers", adapt(usageProvidersRoute.GET));
+app.get("/api/usage/stats", adapt(usageStatsRoute.GET));
+app.get("/api/usage/history", adapt(usageHistoryRoute.GET));
+app.get("/api/usage/chart", adapt(usageChartRoute.GET));
+app.get("/api/usage/logs", adapt(usageLogsRoute.GET));
+app.get("/api/usage/request-logs", adapt(usageRequestLogsRoute.GET));
+app.get("/api/usage/request-details", adapt(usageRequestDetailsRoute.GET));
+app.get("/api/usage/:connectionId", adapt(usageConnectionIdRoute.GET));
+app.post("/api/usage/:connectionId/claude-reset", adapt(usageClaudeResetRoute.POST));
+app.get("/api/usage/:connectionId/codex-reset-credits", adapt(usageCodexResetCreditsRoute.GET));
+app.post("/api/usage/:connectionId/codex-reset-credits", adapt(usageCodexResetCreditsRoute.POST));
 
 // 6. AI Gateway Routes (/v1/* and /api/v1/*)
 const registerAiRoutes = (prefix) => {
