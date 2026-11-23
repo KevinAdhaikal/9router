@@ -61,14 +61,63 @@ function solveSynchronously(validated) {
 // import.meta.url-relative fallback silently dead in production. A single
 // non-branching cwd-relative path avoids both problems.
 function resolveWorkerPath() {
-  const workerPath = path.join(process.cwd(), "open-sse/lib/deepseek-pow-worker.mjs");
-  if (!existsSync(workerPath)) {
-    throw new Error(`DeepSeek PoW worker script not found at ${workerPath}`);
+  try {
+    if (typeof process !== "undefined" && typeof process.cwd === "function") {
+      const workerPath = path.join(process.cwd(), "open-sse/lib/deepseek-pow-worker.mjs");
+      if (existsSync(workerPath)) {
+        return workerPath;
+      }
+    }
+  } catch {
+    // Filesystem not accessible in this environment
   }
-  return workerPath;
+  return null;
 }
 
-function solveInWorker(validated, options = {}) {
+async function solveRemotely(validated, solverUrl, options = {}) {
+  const { signal } = options;
+  const timeoutMs = resolveTimeoutMs(options.timeoutMs);
+
+  const payload = {
+    algorithm: validated.algorithm || DEEPSEEK_POW_ALGORITHM,
+    challenge: validated.challenge,
+    prefix: validated.prefix,
+    difficulty: validated.difficulty,
+    expireAt: validated.expireAt,
+    salt: validated.salt,
+  };
+
+  const headers = {
+    "Content-Type": "application/json",
+  };
+  if (options.powSolverKey) {
+    headers["Authorization"] = `Bearer ${options.powSolverKey}`;
+  }
+
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
+  const res = await fetch(solverUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+    signal: combinedSignal,
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Remote DeepSeek PoW solver (${solverUrl}) returned HTTP ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  const answer = data.answer ?? data.nonce;
+  if (!Number.isSafeInteger(answer) || answer < -1) {
+    throw new Error(`Remote DeepSeek PoW solver (${solverUrl}) returned invalid answer: ${JSON.stringify(data)}`);
+  }
+  return answer;
+}
+
+function solveInWorker(validated, workerPath, options = {}) {
   const { signal } = options;
   if (signal?.aborted) return Promise.reject(createAbortError());
   if (activeWorkerCount >= MAX_CONCURRENT_WORKERS) {
@@ -87,7 +136,7 @@ function solveInWorker(validated, options = {}) {
     // and every later call reports "capacity reached" instead of the real cause.
     let worker;
     try {
-      worker = new Worker(resolveWorkerPath(), { workerData: validated });
+      worker = new Worker(workerPath, { workerData: validated });
     } catch (error) {
       activeWorkerCount = Math.max(0, activeWorkerCount - 1);
       reject(error instanceof Error ? error : new Error(String(error)));
@@ -144,7 +193,25 @@ export async function solveDeepSeekPowAsync(
   options = {}
 ) {
   const validated = validateChallenge(algorithm, challenge, salt, difficulty, expireAt);
-  return solveInWorker(validated, options);
+
+  // 1. Remote solver if URL provided (via options or process.env.DEEPSEEK_POW_URL)
+  const solverUrl = options.powSolverUrl || (typeof process !== "undefined" && process.env?.DEEPSEEK_POW_URL) || null;
+  if (solverUrl) {
+    return solveRemotely(validated, solverUrl, options);
+  }
+
+  // 2. Node.js worker_threads if available and script exists on disk
+  const workerPath = resolveWorkerPath();
+  if (workerPath && typeof Worker !== "undefined") {
+    try {
+      return await solveInWorker(validated, workerPath, options);
+    } catch (err) {
+      if (options.log) options.log.warn?.("DEEPSEEK-POW", `Worker failed: ${err.message}, falling back to synchronous solve`);
+    }
+  }
+
+  // 3. Fallback: in-process synchronous solve (suitable for Cloudflare Workers / browser when difficulty is low)
+  return solveSynchronously(validated);
 }
 
 export function solveDeepSeekPow(algorithm, challenge, salt, difficulty, expireAt) {

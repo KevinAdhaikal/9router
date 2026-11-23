@@ -22,6 +22,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [deepseekWebData, setDeepseekWebData] = useState({ powSolverUrl: "" });
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
   const [region, setRegion] = useState("");
@@ -50,6 +51,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (connection.provider === "deepseek-web" && connection.providerSpecificData) {
+        setDeepseekWebData({ powSolverUrl: connection.providerSpecificData.powSolverUrl || "" });
+      }
       if (AI_PROVIDERS?.[connection.provider]?.credentialForm === "aws") {
         const psd = connection.providerSpecificData || {};
         setAwsData({
@@ -74,6 +78,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isDeepSeekWeb = connection?.provider === "deepseek-web";
   const usesAwsCredentialForm = AI_PROVIDERS?.[connection?.provider]?.credentialForm === "aws";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
@@ -123,6 +128,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiKey: formData.apiKey,
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          ...(isDeepSeekWeb ? { providerSpecificData: { powSolverUrl: deepseekWebData.powSolverUrl.trim() } } : {}),
           ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
           ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
         }),
@@ -159,6 +165,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 apiKey: formData.apiKey,
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                ...(isDeepSeekWeb ? { providerSpecificData: { powSolverUrl: deepseekWebData.powSolverUrl.trim() } } : {}),
                 ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
                 ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
               }),
@@ -190,6 +197,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      }
+      if (isDeepSeekWeb) {
+        updates.providerSpecificData = {
+          ...(connection.providerSpecificData || {}),
+          powSolverUrl: deepseekWebData.powSolverUrl.trim(),
+        };
       }
       if (usesAwsCredentialForm) {
         updates.providerSpecificData = buildAwsSpecificData();
@@ -335,6 +348,22 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 Remove saved session token
               </label>
             </div>
+          </div>
+        )}
+
+        {isDeepSeekWeb && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-1 text-sm">Remote PoW Solver (Optional)</h3>
+            <p className="text-xs text-text-muted mb-3">
+              Offload Proof of Work computation to an external endpoint (e.g. Vercel) to avoid Cloudflare Pages CPU limits.
+            </p>
+            <Input
+              label="Solver Endpoint URL"
+              value={deepseekWebData.powSolverUrl}
+              onChange={(e) => setDeepseekWebData({ ...deepseekWebData, powSolverUrl: e.target.value })}
+              placeholder="https://your-pow-solver.vercel.app/api/pow"
+              hint="Leave blank to solve locally in-process or via DEEPSEEK_POW_URL env."
+            />
           </div>
         )}
 

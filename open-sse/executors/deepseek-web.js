@@ -123,14 +123,19 @@ function generateFakeCookie() {
 
 // ── PoW Solver (DeepSeekHashV1) ─────────────────────────────────────────
 
-async function solvePow(challenge, signal) {
+async function solvePow(challenge, signal, options = {}) {
   const answer = await solveDeepSeekPowAsync(
     challenge.algorithm,
     challenge.challenge,
     challenge.salt,
     challenge.difficulty,
     challenge.expire_at,
-    { signal }
+    {
+      signal,
+      powSolverUrl: options.powSolverUrl,
+      powSolverKey: options.powSolverKey,
+      log: options.log,
+    }
   );
   if (answer < 0) throw new Error("PoW solver failed");
   return Buffer.from(
@@ -828,6 +833,8 @@ export class DeepSeekWebExecutor extends BaseExecutor {
     // Per-connection memory config. Defaults preserve the legacy
     // fresh-session-per-request, last-user-message-only behavior.
     const psd = rawCreds.providerSpecificData ?? {};
+    const powSolverUrl = psd.powSolverUrl || (typeof process !== "undefined" && process.env?.DEEPSEEK_POW_URL) || null;
+    const powSolverKey = psd.powSolverKey || (typeof process !== "undefined" && process.env?.DEEPSEEK_POW_KEY) || null;
     const persistSession = psd.persistSession === true;
     const historyWindow =
       typeof psd.historyWindow === "number" && psd.historyWindow > 0 ? psd.historyWindow : 0;
@@ -845,13 +852,13 @@ export class DeepSeekWebExecutor extends BaseExecutor {
         : messagesToPrompt(promptMessages, historyWindow);
       log?.info?.(
         "DEEPSEEK-WEB",
-        `model_type=${modelType}, thinking=${thinkingEnabled}, search=${searchEnabled}, stream=${stream !== false}, persist=${persistSession}, window=${historyWindow}`
+        `model_type=${modelType}, thinking=${thinkingEnabled}, search=${searchEnabled}, stream=${stream !== false}, persist=${persistSession}, window=${historyWindow}${powSolverUrl ? `, powSolver=${powSolverUrl}` : ""}`
       );
 
       // One completion attempt against a given session id (fresh PoW per attempt).
       const performCompletion = async (sid, completionPrompt = prompt) => {
         const powChallenge = await getPowChallenge(accessToken, signal);
-        const powAnswer = await solvePow(powChallenge, signal);
+        const powAnswer = await solvePow(powChallenge, signal, { powSolverUrl, powSolverKey, log });
         const reqHeaders = {
           ...FAKE_HEADERS,
           "Content-Type": "application/json",

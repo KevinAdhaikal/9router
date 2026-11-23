@@ -20,6 +20,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isDeepSeekWeb = provider === "deepseek-web";
   // Capability, not identity: gating this on `provider === "bedrock"` left bedrock-xai with no
   // way to enter a profile at all, which is the same mistake as hardcoding the API-key exemption.
   const usesAwsCredentialForm =
@@ -45,6 +46,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [deepseekWebData, setDeepseekWebData] = useState({ powSolverUrl: "" });
   const [bedrockData, setBedrockData] = useState({
     profile: "",
     region: "",
@@ -103,6 +105,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isDeepSeekWeb && deepseekWebData.powSolverUrl.trim()) {
+      return { powSolverUrl: deepseekWebData.powSolverUrl.trim() };
     }
     if (usesAwsCredentialForm) {
       // Only send what the user filled in: an empty `profile` would otherwise select profile
@@ -408,6 +413,20 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             <p className="text-xs text-text-muted mt-2">
               Find your Account ID in the right sidebar of <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">dash.cloudflare.com</a>
             </p>
+          </div>
+        )}
+        {isDeepSeekWeb && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-1 text-sm">Remote PoW Solver</h3>
+            <p className="text-xs text-text-muted mb-3">
+              URL endpoint solver PoW (misal Vercel Serverless Function). Sangat disarankan saat dijalankan di Cloudflare Pages/Workers untuk menghindari limit CPU 50ms.
+            </p>
+            <Input
+              label="PoW Solver URL (Optional)"
+              value={deepseekWebData.powSolverUrl}
+              onChange={(e) => setDeepseekWebData({ ...deepseekWebData, powSolverUrl: e.target.value })}
+              placeholder="https://your-app.vercel.app/api/pow"
+            />
           </div>
         )}
         {usesAwsCredentialForm && (
