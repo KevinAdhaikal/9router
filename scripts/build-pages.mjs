@@ -39,9 +39,10 @@ let workerCode = fs.readFileSync(targetWorkerPath, "utf8");
 
 const polyfillHeader = `// Runtime polyfill for Cloudflare Pages/Workers
 if (typeof globalThis.process === "undefined") {
-  globalThis.process = { env: {}, versions: { node: "22.0.0" } };
+  globalThis.process = { env: { CLOUDFLARE_WORKERS: "1" }, versions: { node: "22.0.0" } };
 } else {
   globalThis.process.env = globalThis.process.env || {};
+  globalThis.process.env.CLOUDFLARE_WORKERS = "1";
   globalThis.process.versions = globalThis.process.versions || {};
   if (!globalThis.process.versions.node) {
     globalThis.process.versions.node = "22.0.0";

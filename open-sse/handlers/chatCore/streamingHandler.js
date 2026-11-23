@@ -10,6 +10,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
+import { estimateUsage } from "../../utils/usageTracking.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -39,10 +40,14 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
+  const isWorkers = (typeof navigator !== "undefined" && (navigator.userAgent === "Cloudflare-Workers" || navigator.userAgent?.includes("Cloudflare"))) ||
+    (typeof process !== "undefined" && (process.env?.CLOUDFLARE_WORKERS === "1" || typeof WebSocketPair !== "undefined")) ||
+    typeof WebSocketPair !== "undefined";
+
   // Same-format streaming:
-  // If finish guard is enabled and client expects OpenAI format, wrap in ultra-light finish guard!
-  // This strictly prevents "OpenAI Chat received content after the finish reason" in OpenCode/Cursor.
-  if (streamFinishGuard !== false && sourceFormat === FORMATS.OPENAI) {
+  // In Cloudflare Workers (50ms CPU limit), skip JS finish guard for same-format passthrough
+  // to achieve true zero-CPU C++ streaming (strictly prevents Error 1102 / Worker exceeded CPU limit).
+  if (streamFinishGuard !== false && streamFinishGuard !== "passthrough" && sourceFormat === FORMATS.OPENAI && !isWorkers) {
     return createOpenAIFinishGuardStream(onStreamComplete);
   }
 
@@ -108,6 +113,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, onStreamComplete);
+
+  if (!transformStream) {
+    try {
+      const estUsage = estimateUsage(body, 0, sourceFormat);
+      saveUsageStats({ provider, model, tokens: estUsage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM PASSTHROUGH", silent: true });
+    } catch {}
+  }
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
