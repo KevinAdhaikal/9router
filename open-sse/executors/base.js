@@ -4,6 +4,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
+import { cleanHtmlError } from "../utils/error.js";
 
 /**
  * Fast model replacement in raw JSON string when messages and other fields were not mutated.
@@ -114,7 +115,13 @@ export class BaseExecutor {
   }
 
   parseError(response, bodyText) {
-    return { status: response.status, message: bodyText || `HTTP ${response.status}` };
+    if (!bodyText) return { status: response.status, message: `HTTP ${response.status}` };
+    try {
+      const json = JSON.parse(bodyText);
+      const msg = json.error?.message || json.message || json.error;
+      if (msg) return { status: response.status, message: typeof msg === "string" ? msg : JSON.stringify(msg) };
+    } catch { /* not json */ }
+    return { status: response.status, message: cleanHtmlError(bodyText, response.status) };
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null, directFetch = null, rawBodyText = null, originalModel = null, originalMessages = null }) {

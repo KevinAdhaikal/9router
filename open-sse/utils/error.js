@@ -51,6 +51,56 @@ export async function writeStreamError(writer, statusCode, message) {
 }
 
 /**
+ * Clean up HTML error pages (e.g. Cloudflare WAF, Cloudflare Challenge, Nginx, etc.)
+ * into human-readable single-line error messages.
+ * @param {string} bodyText
+ * @param {number} [status]
+ * @returns {string}
+ */
+export function cleanHtmlError(bodyText, status) {
+  if (!bodyText || typeof bodyText !== "string") {
+    return `Upstream returned empty error (HTTP ${status || "unknown"})`;
+  }
+  const trimmed = bodyText.trim();
+  const isHtml = trimmed.startsWith("<") || trimmed.toLowerCase().includes("<html") || trimmed.toLowerCase().includes("<!doctype html");
+  if (!isHtml) return bodyText;
+
+  // Cloudflare block / challenge detection
+  if (
+    bodyText.includes("Attention Required! | Cloudflare") ||
+    bodyText.includes("Sorry, you have been blocked") ||
+    bodyText.includes("You are unable to access") ||
+    bodyText.includes("Just a moment...")
+  ) {
+    const rayMatch = bodyText.match(/Cloudflare Ray ID:\s*(?:<[^>]+>)*([a-f0-9]+)/i);
+    const rayId = rayMatch?.[1] ? ` [Ray ID: ${rayMatch[1]}]` : "";
+    return `Cloudflare WAF / Bot Block${rayId}: Upstream Cloudflare protection blocked Cloudflare Pages datacenter IP. Configure a Proxy or Relay in Proxy Pools to route this provider's traffic.`;
+  }
+
+  // ChatGPT WAF block
+  if (bodyText.includes("Unable to load site") && bodyText.includes("VPN")) {
+    return "ChatGPT WAF Block: Cloudflare Pages datacenter IP is blocked by chatgpt.com. Configure a Proxy or Relay in Proxy Pools to route Codex traffic.";
+  }
+
+  const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
+  const title = titleMatch?.[1]?.replace(/[\r\n]+/g, " ")?.trim();
+  const h1Match = bodyText.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+  const h1 = h1Match?.[1]?.replace(/[\r\n]+/g, " ")?.trim();
+  const pMatch = bodyText.match(/<p[^>]*>([^<]+)<\/p>/i);
+  const p = pMatch?.[1]?.replace(/[\r\n]+/g, " ")?.trim();
+
+  const cleanText = [title, h1, p].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(" - ") ||
+    bodyText.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 200);
+
+  return cleanText || `Upstream returned HTML error page (HTTP ${status || "unknown"})`;
+}
+
+/**
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
@@ -69,7 +119,8 @@ export async function parseUpstreamError(response, executor = null) {
     try {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
-        const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+        let msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+        msg = cleanHtmlError(msg, response.status);
         return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
       }
     } catch { /* fall through to default parsing */ }
@@ -80,26 +131,11 @@ export async function parseUpstreamError(response, executor = null) {
     const json = JSON.parse(bodyText);
     message = json.error?.message || json.message || json.error || bodyText;
   } catch {
-    if (bodyText && (bodyText.trim().startsWith("<") || bodyText.toLowerCase().includes("<html"))) {
-      const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
-      const title = titleMatch?.[1]?.replace(/[\r\n]+/g, " ")?.trim();
-      const pMatch = bodyText.match(/<p>([^<]+)<\/p>/i);
-      const p = pMatch?.[1]?.replace(/[\r\n]+/g, " ")?.trim();
-      const cleanText = [title, p].filter(Boolean).join(" - ") ||
-        bodyText.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-                .replace(/<[^>]+>/g, " ")
-                .replace(/\s+/g, " ")
-                .trim()
-                .slice(0, 200);
-      message = cleanText || `Upstream returned HTML error page (HTTP ${response.status})`;
-    } else {
-      message = bodyText;
-    }
+    message = cleanHtmlError(bodyText, response.status);
   }
 
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
-  const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+  const finalMessage = cleanHtmlError(messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`, response.status);
 
   return { statusCode: response.status, message: finalMessage };
 }
