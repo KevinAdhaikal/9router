@@ -10,7 +10,10 @@
 // No embedded client_id/secret — the credential is a per-login keypair.
 
 import crypto from "node:crypto";
+import forgeModule from "node-forge";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+
+const forge = forgeModule?.default || forgeModule;
 
 export const ZED_WEB_BASE_URL = "https://zed.dev";
 export const ZED_CLOUD_BASE_URL = "https://cloud.zed.dev";
@@ -137,39 +140,82 @@ export function parseZedCallbackPayload(input) {
   return { userId: String(userId), encryptedAccessToken: String(encryptedAccessToken) };
 }
 
+function decryptWithForge(privateKeyPem, encryptedBuf) {
+  const pki = forge.pki || forge?.default?.pki;
+  const md = forge.md || forge?.default?.md;
+  const forgePrivateKey = pki.privateKeyFromPem(privateKeyPem);
+  const binary = encryptedBuf.toString("binary");
+
+  // 1. Try OAEP sha256 + mgf1 sha256 (standard Zed V1 format)
+  try {
+    const dec = forgePrivateKey.decrypt(binary, "RSA-OAEP", {
+      md: md.sha256.create(),
+      mgf1: { md: md.sha256.create() },
+    });
+    const text = Buffer.from(dec, "binary").toString("utf8");
+    if (text && !text.includes("\uFFFD")) return text;
+  } catch {}
+
+  // 2. Try OAEP sha256 default mgf1
+  try {
+    const dec = forgePrivateKey.decrypt(binary, "RSA-OAEP", {
+      md: md.sha256.create(),
+    });
+    const text = Buffer.from(dec, "binary").toString("utf8");
+    if (text && !text.includes("\uFFFD")) return text;
+  } catch {}
+
+  // 3. Try PKCS#1 v1.5 (Zed V0 format)
+  try {
+    const dec = forgePrivateKey.decrypt(binary, "RSAES-PKCS1-V1_5");
+    const text = Buffer.from(dec, "binary").toString("utf8");
+    if (text && !text.includes("\uFFFD")) return text;
+  } catch {}
+
+  throw new Error("Unable to decrypt RSA ciphertext with OAEP-SHA256 or PKCS#1 v1.5");
+}
+
 /** Decrypt the RSA-encrypted access token using the stored private key. */
 export function decryptZedAccessToken(encryptedAccessToken, privateKeyVerifier) {
   const privateKey = decodeZedPrivateKeyVerifier(privateKeyVerifier);
   const encrypted = Buffer.from(String(encryptedAccessToken), "base64url");
-  const fail = (oaepError) => {
-    const message = oaepError instanceof Error ? oaepError.message : String(oaepError);
+  const fail = (err) => {
+    const message = err instanceof Error ? err.message : String(err);
     throw new Error(`Failed to decrypt Zed access token: ${message}`);
   };
-  try {
-    return crypto
-      .privateDecrypt(
-        { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
-        encrypted,
-      )
-      .toString("utf8");
-  } catch (oaepError) {
+
+  // Try native crypto.privateDecrypt first if available and not an unenv stub
+  if (typeof crypto?.privateDecrypt === "function") {
     try {
-      const text = crypto
+      return crypto
         .privateDecrypt(
-          { key: privateKey, padding: crypto.constants.RSA_PKCS1_PADDING },
+          { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
           encrypted,
         )
         .toString("utf8");
-      // PKCS#1 v1.5 unpadding is not integrity-checked: a wrong-key decrypt
-      // can "succeed" with garbage bytes instead of throwing. Replacement
-      // characters prove the output is not the real UTF-8 token — fail loudly
-      // rather than storing garbage as a credential.
-      if (text.includes("�")) fail(oaepError);
-      return text;
-    } catch (err) {
-      if (err.message.startsWith("Failed to decrypt Zed access token")) throw err;
-      fail(oaepError);
+    } catch (oaepError) {
+      const msg = String(oaepError?.message || "");
+      if (!msg.includes("not implemented")) {
+        try {
+          const text = crypto
+            .privateDecrypt(
+              { key: privateKey, padding: crypto.constants.RSA_PKCS1_PADDING },
+              encrypted,
+            )
+            .toString("utf8");
+          if (!text.includes("\uFFFD")) return text;
+        } catch {
+          // fall through to forge fallback
+        }
+      }
     }
+  }
+
+  // Pure JavaScript fallback with node-forge (works in Cloudflare Pages/Workers & unenv)
+  try {
+    return decryptWithForge(privateKey, encrypted);
+  } catch (forgeErr) {
+    fail(forgeErr);
   }
 }
 
