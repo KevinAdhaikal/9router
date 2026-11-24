@@ -82,50 +82,63 @@ export default function ZedAuthModal({ isOpen, providerInfo, onSuccess, onClose 
     pollAbortRef.current = false;
 
     try {
-      const startRes = await fetch("/api/oauth/zed/start-proxy");
-      const startData = await startRes.json();
-      if (!startRes.ok || !startData.success || !startData.callbackUrl) {
-        throw new Error(startData.reason || startData.error || "Failed to start Zed callback server");
+      let callbackUrl = "http://127.0.0.1:58443/";
+      let proxyStarted = false;
+
+      try {
+        const startRes = await fetch("/api/oauth/zed/start-proxy");
+        const startData = await startRes.json();
+        if (startRes.ok && startData.success && startData.callbackUrl) {
+          callbackUrl = startData.callbackUrl;
+          proxyStarted = true;
+          flowRef.current.proxyStarted = true;
+          flowRef.current.stopSent = false;
+        } else if (startData?.callbackUrl) {
+          callbackUrl = startData.callbackUrl;
+        }
+      } catch {
+        // Serverless environment: continue with default callback URL
       }
-      flowRef.current.proxyStarted = true;
-      flowRef.current.stopSent = false;
+
       if (!isOpenRef.current) {
-        stopOwnedProxy();
+        if (proxyStarted) stopOwnedProxy();
         return;
       }
 
       const authorizeUrl = new URL("/api/oauth/zed/authorize", window.location.origin);
-      authorizeUrl.searchParams.set("redirect_uri", startData.callbackUrl);
+      authorizeUrl.searchParams.set("redirect_uri", callbackUrl);
       const authRes = await fetch(authorizeUrl);
       const nextAuth = await authRes.json();
       if (!authRes.ok) {
-        stopOwnedProxy();
+        if (proxyStarted) stopOwnedProxy();
         throw new Error(nextAuth.error || "Failed to start Zed authorization");
       }
       if (!isOpenRef.current) {
-        stopOwnedProxy();
+        if (proxyStarted) stopOwnedProxy();
         return;
       }
 
-      const regBody = { state: nextAuth.state };
-      if (nextAuth.codeVerifier) regBody.codeVerifier = nextAuth.codeVerifier;
-      if (nextAuth.systemId) regBody.systemId = nextAuth.systemId;
-      const regRes = await fetch("/api/oauth/zed/register-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(regBody),
-      });
-      let regData = null;
-      try {
-        regData = await regRes.json();
-      } catch {
-        regData = null;
+      if (proxyStarted) {
+        const regBody = { state: nextAuth.state };
+        if (nextAuth.codeVerifier) regBody.codeVerifier = nextAuth.codeVerifier;
+        if (nextAuth.systemId) regBody.systemId = nextAuth.systemId;
+        const regRes = await fetch("/api/oauth/zed/register-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(regBody),
+        });
+        let regData = null;
+        try {
+          regData = await regRes.json();
+        } catch {
+          regData = null;
+        }
+        if (!regRes.ok || regData?.success === false) {
+          stopOwnedProxy();
+          throw new Error(regData?.error || "Failed to register Zed login session");
+        }
+        if (!isOpenRef.current) return;
       }
-      if (!regRes.ok || regData?.success === false) {
-        stopOwnedProxy();
-        throw new Error(regData?.error || "Failed to register Zed login session");
-      }
-      if (!isOpenRef.current) return;
 
       setAuthData(nextAuth);
       setPhase((prev) => (prev === "ide-found" || prev === "importing" ? prev : "browser"));

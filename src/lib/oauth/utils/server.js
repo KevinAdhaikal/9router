@@ -2,6 +2,16 @@ import http from "http";
 import { URL } from "url";
 import { CODEX_CONFIG, TRAE_CONFIG, WINDSURF_CONFIG, ZED_HOSTED_CONFIG } from "../constants/oauth.js";
 
+/**
+ * Check if Node.js HTTP server is supported in current runtime (false in Cloudflare Workers/Pages).
+ */
+export function isHttpServerAvailable() {
+  if (typeof globalThis.WebSocketPair !== "undefined" || process.env.CLOUDFLARE_WORKERS) {
+    return false;
+  }
+  return typeof http?.createServer === "function";
+}
+
 // Loopback origin guard for local callback proxies.
 // Legit OAuth redirects are top-level navigations (no `Origin` header); a cross-site
 // page issuing `fetch(..., {mode:"no-cors"})` to scan + hit 127.0.0.1 always sends
@@ -20,7 +30,12 @@ function isLoopbackOrigin(origin) {
  */
 export function startLocalServer(onCallback, fixedPort = null) {
   return new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => {
+    if (!isHttpServerAvailable()) {
+      reject(new Error("Local HTTP server not supported in serverless environment"));
+      return;
+    }
+    try {
+      const server = http.createServer((req, res) => {
       const url = new URL(req.url, `http://localhost`);
 
       if (url.pathname === "/callback" || url.pathname === "/auth/callback") {
@@ -93,6 +108,9 @@ export function startLocalServer(onCallback, fixedPort = null) {
         reject(err);
       }
     });
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
@@ -193,12 +211,17 @@ function renderCodexResultPage(success, message) {
  */
 export function startCodexProxy(appPort) {
   return new Promise((resolve) => {
+    if (!isHttpServerAvailable()) {
+      resolve({ success: false, reason: "serverless_environment" });
+      return;
+    }
     if (codexProxyServer) {
       resolve({ success: true });
       return;
     }
 
-    const server = http.createServer(async (req, res) => {
+    try {
+      const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, "http://localhost");
 
       if (url.pathname !== "/callback" && url.pathname !== "/auth/callback") {
@@ -278,6 +301,9 @@ export function startCodexProxy(appPort) {
         resolve({ success: false, reason: err.message });
       }
     });
+    } catch (err) {
+      resolve({ success: false, reason: err.message });
+    }
   });
 }
 
@@ -337,12 +363,17 @@ function renderXaiResultPage(success, message) {
  */
 export function startXaiProxy(appPort) {
   return new Promise((resolve) => {
+    if (!isHttpServerAvailable()) {
+      resolve({ success: false, reason: "serverless_environment" });
+      return;
+    }
     if (xaiProxyServer) {
       resolve({ success: true });
       return;
     }
 
-    const server = http.createServer(async (req, res) => {
+    try {
+      const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, "http://localhost");
       if (url.pathname !== "/callback" && url.pathname !== "/auth/callback") {
         res.writeHead(404);
@@ -420,6 +451,9 @@ export function startXaiProxy(appPort) {
         resolve({ success: false, reason: err.message });
       }
     });
+    } catch (err) {
+      resolve({ success: false, reason: err.message });
+    }
   });
 }
 
@@ -460,11 +494,17 @@ export function clearTraeSession(state) {
 
 export function startTraeProxy() {
   return new Promise((resolve) => {
+    const defaultCallback = `http://127.0.0.1:58443${TRAE_CONFIG.callbackPath}`;
+    if (!isHttpServerAvailable()) {
+      resolve({ success: false, reason: "serverless_environment", port: 58443, callbackUrl: defaultCallback });
+      return;
+    }
     if (traeProxyServer) {
       resolve({ success: true, port: traeProxyPort, callbackUrl: `http://127.0.0.1:${traeProxyPort}${TRAE_CONFIG.callbackPath}` });
       return;
     }
-    const server = http.createServer(async (req, res) => {
+    try {
+      const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, "http://localhost");
       if (url.pathname !== TRAE_CONFIG.callbackPath && url.pathname !== "/auth/callback") {
         res.writeHead(404);
@@ -529,6 +569,9 @@ export function startTraeProxy() {
       resolve({ success: true, port: traeProxyPort, callbackUrl: `http://127.0.0.1:${traeProxyPort}${TRAE_CONFIG.callbackPath}` });
     });
     server.on("error", (err) => resolve({ success: false, reason: err.message }));
+    } catch (err) {
+      resolve({ success: false, reason: err.message, port: 58443, callbackUrl: defaultCallback });
+    }
   });
 }
 
@@ -564,11 +607,17 @@ export function clearWindsurfSession(state) {
 
 export function startWindsurfProxy() {
   return new Promise((resolve) => {
+    const defaultCallback = `http://127.0.0.1:58443${WINDSURF_CONFIG.callbackPath}`;
+    if (!isHttpServerAvailable()) {
+      resolve({ success: false, reason: "serverless_environment", port: 58443, callbackUrl: defaultCallback });
+      return;
+    }
     if (windsurfProxyServer) {
       resolve({ success: true, port: windsurfProxyPort, callbackUrl: `http://127.0.0.1:${windsurfProxyPort}${WINDSURF_CONFIG.callbackPath}` });
       return;
     }
-    const server = http.createServer(async (req, res) => {
+    try {
+      const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, "http://localhost");
       if (url.pathname !== WINDSURF_CONFIG.callbackPath) {
         res.writeHead(404);
@@ -628,6 +677,9 @@ export function startWindsurfProxy() {
       resolve({ success: true, port: windsurfProxyPort, callbackUrl: `http://127.0.0.1:${windsurfProxyPort}${WINDSURF_CONFIG.callbackPath}` });
     });
     server.on("error", (err) => resolve({ success: false, reason: err.message }));
+    } catch (err) {
+      resolve({ success: false, reason: err.message, port: 58443, callbackUrl: defaultCallback });
+    }
   });
 }
 
@@ -670,6 +722,12 @@ export function clearZedSession(state) {
 
 export function startZedProxy(preferredPort = 0) {
   return new Promise((resolve) => {
+    const defaultPort = Number(preferredPort) || ZED_HOSTED_CONFIG.defaultNativeAppPort || 58443;
+    const defaultCallback = `http://127.0.0.1:${defaultPort}/`;
+    if (!isHttpServerAvailable()) {
+      resolve({ success: false, reason: "serverless_environment", port: defaultPort, callbackUrl: defaultCallback });
+      return;
+    }
     if (zedProxyServer) {
       // Reuse the live listener, but renew its idle timeout so a previous
       // flow's deadline can never kill the flow that just adopted the port.
@@ -678,7 +736,8 @@ export function startZedProxy(preferredPort = 0) {
       resolve({ success: true, port: zedProxyPort, callbackUrl: `http://127.0.0.1:${zedProxyPort}/` });
       return;
     }
-    const server = http.createServer(async (req, res) => {
+    try {
+      const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, "http://localhost");
       // Log path + redacted params (access_token is the RSA-encrypted credential).
       const redacted = Object.fromEntries(url.searchParams);
@@ -779,6 +838,10 @@ export function startZedProxy(preferredPort = 0) {
       console.log(`[Zed proxy] listening on port ${zedProxyPort}`);
       resolve({ success: true, port: zedProxyPort, callbackUrl: `http://127.0.0.1:${zedProxyPort}/` });
     });
+    } catch (err) {
+      console.log(`[Zed proxy] server creation failed: ${err.message}`);
+      resolve({ success: false, reason: err.message, port: defaultPort, callbackUrl: defaultCallback });
+    }
   });
 }
 
@@ -853,6 +916,10 @@ function renderXiaomiMimoResultPage(success, message) {
  */
 export function startXiaomiMimoProxy() {
   return new Promise((resolve) => {
+    if (!isHttpServerAvailable()) {
+      resolve({ success: false, reason: "serverless_environment" });
+      return;
+    }
     if (xiaomiMimoProxyServer) {
       resolve({
         success: true,
@@ -862,7 +929,8 @@ export function startXiaomiMimoProxy() {
       return;
     }
 
-    const server = http.createServer(async (req, res) => {
+    try {
+      const server = http.createServer(async (req, res) => {
       // Origin guard
       if (!isLoopbackOrigin(req.headers.origin)) {
         res.writeHead(403);
@@ -957,6 +1025,9 @@ export function startXiaomiMimoProxy() {
         callbackUrl: `http://127.0.0.1:${xiaomiMimoProxyPort}/`,
       });
     });
+    } catch (err) {
+      resolve({ success: false, reason: err.message });
+    }
   });
 }
 

@@ -139,46 +139,50 @@ export async function GET(request, { params }) {
     }
 
     if (action === "start-proxy") {
-      // Trae/Windsurf/Zed use a dynamic-port local callback server (singleton session,
-      // state is registered separately via /register-session after /authorize).
-      if (provider === "trae") {
-        const result = await startTraeProxy();
-        return NextResponse.json(result);
+      try {
+        // Trae/Windsurf/Zed use a dynamic-port local callback server (singleton session,
+        // state is registered separately via /register-session after /authorize).
+        if (provider === "trae") {
+          const result = await startTraeProxy();
+          return NextResponse.json(result);
+        }
+        if (provider === "windsurf") {
+          const result = await startWindsurfProxy();
+          return NextResponse.json(result);
+        }
+        if (provider === "zed") {
+          // Prefer ZED_HOSTED_CONFIG.defaultNativeAppPort (58443) so the browser redirect
+          // matches what Zed expects; falls back to a random port if it's busy.
+          const result = await startZedProxy(searchParams.get("native_app_port") || ZED_HOSTED_CONFIG.defaultNativeAppPort);
+          return NextResponse.json(result);
+        }
+        if (provider === "xiaomi-mimo") {
+          const result = await startXiaomiMimoProxy();
+          return NextResponse.json(result);
+        }
+        if (!["codex", "xai"].includes(provider)) {
+          return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
+        }
+        const appPort = searchParams.get("app_port");
+        if (!appPort) {
+          return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
+        }
+        const state = searchParams.get("state");
+        const codeVerifier = searchParams.get("code_verifier");
+        const redirectUri = searchParams.get("redirect_uri");
+        const result = provider === "xai"
+          ? await startXaiProxy(Number(appPort))
+          : await startCodexProxy(Number(appPort));
+        let serverSide = false;
+        if (result.success && state && codeVerifier && redirectUri) {
+          serverSide = provider === "xai"
+            ? registerXaiSession({ state, codeVerifier, redirectUri })
+            : registerCodexSession({ state, codeVerifier, redirectUri });
+        }
+        return NextResponse.json({ ...result, serverSide });
+      } catch (err) {
+        return NextResponse.json({ success: false, reason: err.message, error: err.message });
       }
-      if (provider === "windsurf") {
-        const result = await startWindsurfProxy();
-        return NextResponse.json(result);
-      }
-      if (provider === "zed") {
-        // Prefer ZED_HOSTED_CONFIG.defaultNativeAppPort (58443) so the browser redirect
-        // matches what Zed expects; falls back to a random port if it's busy.
-        const result = await startZedProxy(searchParams.get("native_app_port") || ZED_HOSTED_CONFIG.defaultNativeAppPort);
-        return NextResponse.json(result);
-      }
-      if (provider === "xiaomi-mimo") {
-        const result = await startXiaomiMimoProxy();
-        return NextResponse.json(result);
-      }
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
-      }
-      const appPort = searchParams.get("app_port");
-      if (!appPort) {
-        return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
-      }
-      const state = searchParams.get("state");
-      const codeVerifier = searchParams.get("code_verifier");
-      const redirectUri = searchParams.get("redirect_uri");
-      const result = provider === "xai"
-        ? await startXaiProxy(Number(appPort))
-        : await startCodexProxy(Number(appPort));
-      let serverSide = false;
-      if (result.success && state && codeVerifier && redirectUri) {
-        serverSide = provider === "xai"
-          ? registerXaiSession({ state, codeVerifier, redirectUri })
-          : registerCodexSession({ state, codeVerifier, redirectUri });
-      }
-      return NextResponse.json({ ...result, serverSide });
     }
 
     if (action === "poll-status") {

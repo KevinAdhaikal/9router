@@ -207,59 +207,67 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Trae/Windsurf/Zed proxy OAuth flow: dynamic-port local callback → auto exchange.
   const startProxyFlow = useCallback(async (providerId) => {
-    // 1. Start the local callback server (returns a dynamic port + callback URL).
-    const startRes = await fetch(`/api/oauth/${providerId}/start-proxy`);
-    const startData = await startRes.json();
-    if (!startRes.ok || !startData.success || !startData.callbackUrl) {
-      throw new Error(startData.reason || startData.error || `Failed to start ${providerId} callback server`);
+    let callbackUrl = "http://127.0.0.1:58443/";
+    let proxyStarted = false;
+    try {
+      const startRes = await fetch(`/api/oauth/${providerId}/start-proxy`);
+      const startData = await startRes.json();
+      if (startRes.ok && startData.success && startData.callbackUrl) {
+        callbackUrl = startData.callbackUrl;
+        proxyStarted = true;
+        flowRef.current.proxyStarted = true;
+        flowRef.current.proxyProvider = providerId;
+        flowRef.current.stopSent = false;
+      } else if (startData?.callbackUrl) {
+        callbackUrl = startData.callbackUrl;
+      }
+    } catch {
+      // Serverless or proxy disabled
     }
-    // Take ownership immediately so a close during the remaining flight still
-    // cleans this proxy up (via the close effect or the abort below).
-    flowRef.current.proxyStarted = true;
-    flowRef.current.proxyProvider = providerId;
-    flowRef.current.stopSent = false;
+
     if (!isOpenRef.current) {
-      stopOwnedProxy();
+      if (proxyStarted) stopOwnedProxy();
       return;
     }
     // 2. Build the authorize URL with redirect_uri = proxy callback URL.
     const authorizeUrl = new URL(`/api/oauth/${providerId}/authorize`, window.location.origin);
-    authorizeUrl.searchParams.set("redirect_uri", startData.callbackUrl);
+    authorizeUrl.searchParams.set("redirect_uri", callbackUrl);
     const authRes = await fetch(authorizeUrl);
     const authData = await authRes.json();
     if (!authRes.ok) {
-      stopOwnedProxy();
+      if (proxyStarted) stopOwnedProxy();
       throw new Error(authData.error);
     }
     if (!isOpenRef.current) {
-      stopOwnedProxy();
+      if (proxyStarted) stopOwnedProxy();
       return;
     }
-    // 3. Register the session so the proxy can match the incoming callback.
-    //    Zed also passes code_verifier (encodes the RSA private key for decrypt)
-    //    + systemId; sent via POST body so secrets never land in URL/query logs.
-    const regBody = { state: authData.state };
-    if (authData.codeVerifier) regBody.codeVerifier = authData.codeVerifier;
-    if (authData.systemId) regBody.systemId = authData.systemId;
-    const regRes = await fetch(`/api/oauth/${providerId}/register-session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(regBody),
-    });
-    let regData = null;
-    try {
-      regData = await regRes.json();
-    } catch {
-      regData = null;
+
+    if (proxyStarted) {
+      const regBody = { state: authData.state };
+      if (authData.codeVerifier) regBody.codeVerifier = authData.codeVerifier;
+      if (authData.systemId) regBody.systemId = authData.systemId;
+      const regRes = await fetch(`/api/oauth/${providerId}/register-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(regBody),
+      });
+      let regData = null;
+      try {
+        regData = await regRes.json();
+      } catch {
+        regData = null;
+      }
+      if (!regRes.ok || regData?.success === false) {
+        stopOwnedProxy();
+        throw new Error(regData?.error || "Failed to register login session; please retry");
+      }
+      if (!isOpenRef.current) return;
     }
-    if (!regRes.ok || regData?.success === false) {
-      stopOwnedProxy();
-      throw new Error(regData?.error || "Failed to register login session; please retry");
-    }
-    if (!isOpenRef.current) return; // closed mid-flight: close effect owns cleanup now
+
     // 4. Open popup; proxy auto-exchanges on callback, modal polls poll-status.
     setAuthData({ ...authData, proxyProvider: providerId });
-    setStep("waiting");
+    setStep(proxyStarted ? "waiting" : "input");
     popupRef.current = window.open(authData.authUrl, "oauth_popup", "width=600,height=700");
     if (!popupRef.current) setStep("input"); // popup blocked → fall back to manual paste
   }, [stopOwnedProxy]);
