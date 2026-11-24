@@ -80,7 +80,22 @@ export async function parseUpstreamError(response, executor = null) {
     const json = JSON.parse(bodyText);
     message = json.error?.message || json.message || json.error || bodyText;
   } catch {
-    message = bodyText;
+    if (bodyText && (bodyText.trim().startsWith("<") || bodyText.toLowerCase().includes("<html"))) {
+      const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
+      const title = titleMatch?.[1]?.replace(/[\r\n]+/g, " ")?.trim();
+      const pMatch = bodyText.match(/<p>([^<]+)<\/p>/i);
+      const p = pMatch?.[1]?.replace(/[\r\n]+/g, " ")?.trim();
+      const cleanText = [title, p].filter(Boolean).join(" - ") ||
+        bodyText.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+                .replace(/<[^>]+>/g, " ")
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, 200);
+      message = cleanText || `Upstream returned HTML error page (HTTP ${response.status})`;
+    } else {
+      message = bodyText;
+    }
   }
 
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);

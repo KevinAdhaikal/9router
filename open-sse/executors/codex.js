@@ -404,6 +404,12 @@ export class CodexExecutor extends BaseExecutor {
         }
       } catch { /* fall through to default */ }
     }
+    if (response.status === 403 && bodyText && (bodyText.includes("<html") || bodyText.includes("Unable to load site"))) {
+      return {
+        status: 403,
+        message: "ChatGPT WAF Block: Cloudflare Pages datacenter IP is blocked by chatgpt.com. Configure a Proxy or Relay in Proxy Pools to route Codex traffic."
+      };
+    }
     return super.parseError(response, bodyText);
   }
 
